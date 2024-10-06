@@ -1,0 +1,333 @@
+#Problem1
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Set initial parameters
+np.random.seed(42)  # Set seed for reproducibility
+initial_price = 100  # Initial price at time t-1
+sigma_squared = 0.01  # Variance of returns
+num_simulations = 10000  # Number of simulations to perform
+
+# Generate a series of returns following a normal distribution N(0, σ^2)
+returns = np.random.normal(0, np.sqrt(sigma_squared), num_simulations)
+
+# 1. Classical Brownian Motion
+# Pt = Pt-1 + rt
+price_brownian = initial_price + returns
+
+# 2. Arithmetic Return System
+# Pt = Pt-1 * (1 + rt)
+price_arithmetic = initial_price * (1 + returns)
+
+# 3. Log Return or Geometric Brownian Motion
+# Pt = Pt-1 * exp(rt)
+price_logarithmic = initial_price * np.exp(returns)
+
+# Calculate the mean and standard deviation for each price model
+mean_brownian = np.mean(price_brownian)
+std_brownian = np.std(price_brownian)
+
+mean_arithmetic = np.mean(price_arithmetic)
+std_arithmetic = np.std(price_arithmetic)
+
+mean_logarithmic = np.mean(price_logarithmic)
+std_logarithmic = np.std(price_logarithmic)
+
+# Print the calculated expected values and standard deviations
+print("Classical Brownian Motion:")
+print(f"Expected Value: {mean_brownian:.4f}, Standard Deviation: {std_brownian:.4f}")
+
+print("\nArithmetic Return System:")
+print(f"Expected Value: {mean_arithmetic:.4f}, Standard Deviation: {std_arithmetic:.4f}")
+
+print("\nLog Return or Geometric Brownian Motion:")
+print(f"Expected Value: {mean_logarithmic:.4f}, Standard Deviation: {std_logarithmic:.4f}")
+
+# Visualization of the distribution of prices for each model
+plt.figure(figsize=(10, 6))
+
+# Plot histograms for each price model
+plt.hist(price_brownian, bins=50, alpha=0.5, label='Classical Brownian Motion', color='blue')
+plt.hist(price_arithmetic, bins=50, alpha=0.5, label='Arithmetic Return System', color='green')
+plt.hist(price_logarithmic, bins=50, alpha=0.5, label='Log Return (Geometric Brownian Motion)', color='red')
+
+# Set titles and labels
+plt.title('Price Distributions for Different Price Evolution Models')
+plt.xlabel('Price at time t')
+plt.ylabel('Frequency')
+plt.legend()
+
+# Show the plot
+plt.show()
+
+
+#Problem2
+
+import pandas as pd
+import numpy as np
+from scipy.stats import norm, t
+import statsmodels.api as sm
+from statsmodels.tsa.arima.model import ARIMA
+import matplotlib.pyplot as plt
+
+# Define a function to calculate returns using different methods
+def calculate_returns(prices, method='arithmetic'):
+    """
+    Calculate returns based on the specified method.
+
+    Parameters:
+    - prices: DataFrame of daily stock prices.
+    - method: Method for return calculation ('arithmetic', 'logarithmic').
+
+    Returns:
+    - returns: DataFrame of calculated returns.
+    """
+    if method == 'arithmetic':
+        returns = prices.pct_change().dropna()
+    elif method == 'logarithmic':
+        returns = np.log(prices / prices.shift(1)).dropna()
+    else:
+        raise ValueError("Invalid method. Choose 'arithmetic' or 'logarithmic'.")
+    
+    return returns
+
+# Load DailyPrices.csv data (assumed to be in the current directory)
+daily_prices = pd.read_csv('DailyPrices.csv', parse_dates=['Date'], index_col='Date')
+
+# Calculate arithmetic returns for all stocks
+arithmetic_returns = calculate_returns(daily_prices, method='arithmetic')
+
+# Calculate arithmetic returns for META and adjust to remove the mean
+meta_returns = arithmetic_returns['META']
+meta_returns_adjusted = meta_returns - meta_returns.mean()  # Remove mean so that mean(META) = 0
+
+# Define a function to calculate VaR using different methods
+def calculate_var(returns, method='normal', alpha=0.05, lambda_value=0.94):
+    """
+    Calculate VaR using different methods.
+
+    Parameters:
+    - returns: Series of adjusted returns (e.g., META).
+    - method: VaR calculation method ('normal', 'ewma', 't-distribution', 'ar1', 'historical').
+    - alpha: Confidence level for VaR calculation (default is 5%).
+    - lambda_value: Exponential weighting factor for EWMA (default is 0.94).
+
+    Returns:
+    - VaR value.
+    """
+    if method == 'normal':
+        # Calculate VaR using Normal distribution
+        std = returns.std()
+        VaR = -norm.ppf(alpha) * std
+
+    elif method == 'ewma':
+        # Calculate VaR using Exponentially Weighted Moving Average (EWMA)
+        ewma_std = returns.ewm(span=(2 / (1 - lambda_value) - 1)).std().iloc[-1]
+        VaR = -norm.ppf(alpha) * ewma_std
+
+    elif method == 't-distribution':
+        # Calculate VaR using MLE fitted T-distribution
+        params = t.fit(returns)
+        VaR = -t.ppf(alpha, *params) * returns.std()
+
+    elif method == 'ar1':
+        # Calculate VaR using AR(1) model
+        model = ARIMA(returns, order=(1, 0, 0))
+        model_fit = model.fit()
+        residuals = model_fit.resid
+        residual_std = residuals.std()
+        VaR = -norm.ppf(alpha) * residual_std
+
+    elif method == 'historical':
+        # Calculate VaR using Historical Simulation
+        sorted_returns = np.sort(returns)
+        VaR = -sorted_returns[int(alpha * len(sorted_returns))]
+
+    else:
+        raise ValueError("Invalid method. Choose 'normal', 'ewma', 't-distribution', 'ar1', or 'historical'.")
+
+    return VaR
+
+# Calculate VaR using different methods
+VaR_normal = calculate_var(meta_returns_adjusted, method='normal')
+VaR_ewma = calculate_var(meta_returns_adjusted, method='ewma')
+VaR_t_dist = calculate_var(meta_returns_adjusted, method='t-distribution')
+VaR_ar1 = calculate_var(meta_returns_adjusted, method='ar1')
+VaR_historical = calculate_var(meta_returns_adjusted, method='historical')
+
+# Compare the results of the five methods and print
+print("\nComparison of VaR Values for META Stock Using Different Methods:")
+print(f"VaR using Normal Distribution: {VaR_normal:.4f}")
+print(f"VaR using EWMA (λ = 0.94): {VaR_ewma:.4f}")
+print(f"VaR using MLE Fitted T Distribution: {VaR_t_dist:.4f}")
+print(f"VaR using AR(1) Model: {VaR_ar1:.4f}")
+print(f"VaR using Historical Simulation: {VaR_historical:.4f}")
+
+# Visualize the VaR values comparison using a bar chart
+methods = ['Normal', 'EWMA', 'T-Distribution', 'AR(1)', 'Historical']
+VaR_values = [VaR_normal, VaR_ewma, VaR_t_dist, VaR_ar1, VaR_historical]
+
+# Plot the VaR values comparison
+plt.figure(figsize=(10, 6))
+plt.bar(methods, VaR_values, color='skyblue')
+plt.title('VaR Comparison Using Different Methods for META Stock')
+plt.xlabel('VaR Calculation Method')
+plt.ylabel('VaR Value')
+plt.show()
+
+#Problem3
+
+import os
+import pandas as pd
+import numpy as np
+from scipy.stats import norm
+
+# Mount Google Drive to access files stored in 'Colab Notebooks'
+from google.colab import drive
+drive.mount('/content/drive', force_remount=True)
+
+# Update the file paths to the actual paths in 'Colab Notebooks'
+daily_prices_file = '/content/drive/My Drive/Colab Notebooks/DailyPrices.csv'
+portfolio_file = '/content/drive/My Drive/Colab Notebooks/portfolio.csv'
+
+# Check if both files exist before proceeding
+print("DailyPrices.csv exists:", os.path.isfile(daily_prices_file))
+print("portfolio.csv exists:", os.path.isfile(portfolio_file))
+
+# If both files exist, continue with reading the data
+if os.path.isfile(daily_prices_file) and os.path.isfile(portfolio_file):
+    # Read the 'Portfolio.csv' file containing portfolio information
+    portfolio = pd.read_csv(portfolio_file)
+
+    # Read the 'DailyPrices.csv' file containing daily stock prices, and parse the 'Date' column
+    daily_prices = pd.read_csv(daily_prices_file, parse_dates=['Date'], index_col='Date')
+
+    # Calculate daily logarithmic returns and arithmetic returns
+    log_returns = np.log(daily_prices / daily_prices.shift(1)).dropna()
+    arithmetic_returns = daily_prices.pct_change().dropna()
+
+    # Check if there are any missing stocks in the returns DataFrame
+    missing_stocks = set(portfolio['Stock']) - set(log_returns.columns)
+    print(f"Missing stocks in log returns DataFrame: {missing_stocks}")
+
+    # Filter out the stocks in the portfolio that are missing in returns DataFrame
+    portfolio_filtered = portfolio[portfolio['Stock'].isin(log_returns.columns)]
+
+    # Create a dictionary to store portfolio weights for each portfolio group
+    portfolio_weights = {}
+    for portfolio_name in portfolio_filtered['Portfolio'].unique():
+        holdings = portfolio_filtered[portfolio_filtered['Portfolio'] == portfolio_name]
+        total_shares = holdings['Holding'].sum()
+        weights = holdings.set_index('Stock')['Holding'] / total_shares
+        portfolio_weights[portfolio_name] = weights
+
+    # Define a function to calculate VaR using the Exponentially Weighted Covariance Matrix method
+    def calculate_portfolio_var(returns, weights, lambda_value=0.97, alpha=0.05):
+        """
+        Calculate VaR using the Exponentially Weighted Covariance Matrix.
+        
+        Parameters:
+        - returns: DataFrame containing returns for each stock
+        - weights: Series containing portfolio weights for each stock
+        - lambda_value: Exponential weighting factor (default is 0.97)
+        - alpha: Confidence level for VaR calculation (default is 5%)
+        
+        Returns:
+        - portfolio_var: Value at Risk for the given portfolio
+        """
+        # Calculate the exponentially weighted covariance matrix
+        cov_matrix = returns.ewm(span=(2/(1-lambda_value)-1)).cov().iloc[-len(returns.columns):, -len(returns.columns):]
+
+        # Ensure the shape of the weights vector is correct
+        weights = weights.values.reshape(-1, 1)
+        
+        # Calculate the portfolio's standard deviation (volatility)
+        portfolio_std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))[0, 0]
+        
+        # Calculate VaR using the correct standard deviation and negative quantile value
+        # Use `norm.ppf(1 - alpha)` to represent the left-side quantile
+        portfolio_var = portfolio_std * abs(norm.ppf(1 - alpha))
+        
+        return portfolio_var
+
+    # Calculate the total value of a given portfolio
+    def calculate_portfolio_value(portfolio, daily_prices, portfolio_name):
+        """
+        Calculate the total value of a specific portfolio by summing up the value of all holdings.
+        
+        Parameters:
+        - portfolio: DataFrame containing portfolio holdings and stocks.
+        - daily_prices: DataFrame containing daily stock prices.
+        - portfolio_name: Name of the portfolio to calculate total value.
+        
+        Returns:
+        - total_value: The total value of the portfolio.
+        """
+        # Filter the portfolio by portfolio name
+        portfolio_specific = portfolio[portfolio['Portfolio'] == portfolio_name]
+
+        # Get the latest stock prices (using the last row of the daily_prices DataFrame)
+        latest_prices = daily_prices.iloc[-1]
+
+        # Merge the portfolio with the latest prices based on stock symbols
+        portfolio_with_prices = portfolio_specific.merge(latest_prices.rename('Price'), left_on='Stock', right_index=True)
+
+        # Calculate the total value of each holding (Holding * Price)
+        portfolio_with_prices['TotalValue'] = portfolio_with_prices['Holding'] * portfolio_with_prices['Price']
+        
+        # Sum up the total value of all holdings to get the total portfolio value
+        total_value = portfolio_with_prices['TotalValue'].sum()
+        return total_value
+
+    # Calculate total value and VaR for each portfolio and display VaR in USD
+    total_var_in_usd_log = 0  # To store total VaR in USD for log returns
+    total_var_in_usd_arithmetic = 0  # To store total VaR in USD for arithmetic returns
+    total_portfolio_value_sum = 0  # To store the total value of all portfolios
+
+    for portfolio_name in portfolio_weights.keys():
+        # Calculate total value of the portfolio
+        total_portfolio_value = calculate_portfolio_value(portfolio_filtered, daily_prices, portfolio_name)
+        total_portfolio_value_sum += total_portfolio_value  # Sum up each portfolio's total value
+
+        # Calculate VaR using Log Returns
+        returns_for_weights_log = log_returns[portfolio_weights[portfolio_name].index]
+        var_value_log = calculate_portfolio_var(returns_for_weights_log, portfolio_weights[portfolio_name])
+        var_in_usd_log = total_portfolio_value * var_value_log
+        total_var_in_usd_log += var_in_usd_log  # Sum up VaR in USD for log returns
+
+        # Calculate VaR using Arithmetic Returns (Newly added model)
+        returns_for_weights_arithmetic = arithmetic_returns[portfolio_weights[portfolio_name].index]
+        var_value_arithmetic = calculate_portfolio_var(returns_for_weights_arithmetic, portfolio_weights[portfolio_name])
+        var_in_usd_arithmetic = total_portfolio_value * var_value_arithmetic
+        total_var_in_usd_arithmetic += var_in_usd_arithmetic  # Sum up VaR in USD for arithmetic returns
+
+        # Print results for each portfolio
+        print(f"\nPortfolio: {portfolio_name}")
+        print(f"Total Portfolio Value: ${total_portfolio_value:.2f}")
+        print(f"VaR (Log Returns) for {portfolio_name}: {var_value_log:.4f}")
+        print(f"VaR in USD (Log Returns) for {portfolio_name}: ${var_in_usd_log:.2f}")
+        print(f"VaR (Arithmetic Returns) for {portfolio_name}: {var_value_arithmetic:.4f}")
+        print(f"VaR in USD (Arithmetic Returns) for {portfolio_name}: ${var_in_usd_arithmetic:.2f}")
+
+    # Calculate total portfolio weights by combining all individual holdings
+    total_holdings = portfolio_filtered.groupby('Stock')['Holding'].sum()
+    total_weights = total_holdings / total_holdings.sum()
+
+    # Calculate the total VaR using combined portfolio returns for log and arithmetic returns
+    total_var_combined_log = calculate_portfolio_var(log_returns[total_weights.index], total_weights)
+    total_var_combined_arithmetic = calculate_portfolio_var(arithmetic_returns[total_weights.index], total_weights)
+
+    # Calculate total VaR in USD for the combined portfolio
+    total_var_in_usd_combined_log = total_portfolio_value_sum * total_var_combined_log
+    total_var_in_usd_combined_arithmetic = total_portfolio_value_sum * total_var_combined_arithmetic
+
+    # Display total combined portfolio VaR results
+    print(f"\nTotal Combined Portfolio Value: ${total_portfolio_value_sum:.2f}")
+    print(f"Total Combined VaR (Log Returns): {total_var_combined_log:.4f}")
+    print(f"Total VaR in USD for Combined Portfolio (Log Returns): ${total_var_in_usd_combined_log:.2f}")
+    print(f"Total Combined VaR (Arithmetic Returns): {total_var_combined_arithmetic:.4f}")
+    print(f"Total VaR in USD for Combined Portfolio (Arithmetic Returns): ${total_var_in_usd_combined_arithmetic:.2f}")
+
+else:
+    print("One or both of the files do not exist. Please check the file paths.")
