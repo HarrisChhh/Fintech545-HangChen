@@ -1,0 +1,117 @@
+# PROBLEM 2
+import pandas as pd
+import numpy as np
+from scipy.stats import t
+from google.colab import drive
+
+drive.mount('/content/drive')
+
+# Load the CSV file from the Colab Notebooks folder
+file_path = '/content/drive/MyDrive/Colab Notebooks/problem1.csv'
+df = pd.read_csv(file_path)
+
+returns = df['x']
+lambda_value = 0.97
+weighted_volatility = returns.ewm(span=(2/(1-lambda_value)-1)).std()
+
+# VaR and ES using Normal Distribution
+VaR_normal = -1.65 * weighted_volatility 
+ES_normal = -returns[returns <= VaR_normal].mean() 
+
+# VaR and ES using T-distribution
+params = t.fit(returns)
+df_t, loc, scale = params
+VaR_t = -t.ppf(0.05, df_t, loc=loc, scale=scale)
+ES_t = -t.expect(lambda x: x, args=(df_t,), loc=loc, scale=scale, lb=-np.inf, ub=VaR_t)
+
+# Historical VaR and ES
+VaR_hist = np.percentile(returns, 5)
+ES_hist = returns[returns <= VaR_hist].mean()
+
+# Print results
+print(f"VaR Normal: {VaR_normal.iloc[-1]}, ES Normal: {ES_normal}")
+print(f"VaR T-distribution: {VaR_t}, ES T-distribution: {ES_t}")
+print(f"VaR Historical: {VaR_hist}, ES Historical: {ES_hist}")
+
+# PROBLEM 3
+import pandas as pd
+import numpy as np
+from google.colab import drive
+from scipy.stats import t, norm
+!pip install copulas
+from copulas.multivariate import GaussianMultivariate
+
+# Mount Google Drive
+drive.mount('/content/drive')
+
+# Load the data
+portfolio_file = '/content/drive/MyDrive/Colab Notebooks/portfolio-2.csv'
+prices_file = '/content/drive/MyDrive/Colab Notebooks/DailyPrices.csv'
+
+portfolio = pd.read_csv(portfolio_file)
+prices = pd.read_csv(prices_file)
+
+# Set the 'Date' column as index for prices data
+prices.set_index('Date', inplace=True)
+
+# Extract portfolios A, B, and C from the portfolio file
+portfolio_A = portfolio[portfolio['Portfolio'] == 'A']
+portfolio_B = portfolio[portfolio['Portfolio'] == 'B']
+portfolio_C = portfolio[portfolio['Portfolio'] == 'C']
+
+# Calculate returns for all stocks
+returns = prices.pct_change().dropna()
+
+# Calculate weighted returns for Portfolio A
+portfolio_A_returns = (returns[portfolio_A['Stock']] * portfolio_A.set_index('Stock')['Holding']).sum(axis=1) / portfolio_A['Holding'].sum()
+
+# Calculate weighted returns for Portfolio B
+portfolio_B_returns = (returns[portfolio_B['Stock']] * portfolio_B.set_index('Stock')['Holding']).sum(axis=1) / portfolio_B['Holding'].sum()
+
+# Calculate weighted returns for Portfolio C
+portfolio_C_returns = (returns[portfolio_C['Stock']] * portfolio_C.set_index('Stock')['Holding']).sum(axis=1) / portfolio_C['Holding'].sum()
+
+# Portfolio A: Fit T-distribution and calculate VaR and ES
+params_A = t.fit(portfolio_A_returns)
+df_A, loc_A, scale_A = params_A
+VaR_A = -t.ppf(0.05, df_A, loc=loc_A, scale=scale_A)
+ES_A = -t.expect(lambda x: x, args=(df_A,), loc=loc_A, scale=scale_A, lb=-np.inf, ub=VaR_A)
+
+# Portfolio B: Fit T-distribution and calculate VaR and ES
+params_B = t.fit(portfolio_B_returns)
+df_B, loc_B, scale_B = params_B
+VaR_B = -t.ppf(0.05, df_B, loc=loc_B, scale=scale_B)
+ES_B = -t.expect(lambda x: x, args=(df_B,), loc=loc_B, scale=scale_B, lb=-np.inf, ub=VaR_B)
+
+# Portfolio C: Fit Normal distribution and calculate VaR and ES
+VaR_C = -norm.ppf(0.05, loc=portfolio_C_returns.mean(), scale=portfolio_C_returns.std())
+ES_C = -portfolio_C_returns[portfolio_C_returns <= VaR_C].mean()
+
+# --- Combine the risks using Gaussian Copula ---
+copula = GaussianMultivariate()
+copula.fit(pd.DataFrame({
+    'A': portfolio_A_returns,
+    'B': portfolio_B_returns,
+    'C': portfolio_C_returns
+}))
+
+sampled_data = copula.sample(10000)
+
+# Calculate total VaR and ES from the copula sample
+VaR_total = np.percentile(sampled_data, 5)
+ES_total = sampled_data[sampled_data <= VaR_total].mean()
+
+# Print results
+print(f"VaR for Portfolio A (T-distribution): {VaR_A}")
+print(f"ES for Portfolio A: {ES_A}")
+print(f"VaR for Portfolio B (T-distribution): {VaR_B}")
+print(f"ES for Portfolio B: {ES_B}")
+print(f"VaR for Portfolio C (Normal distribution): {VaR_C}")
+print(f"ES for Portfolio C: {ES_C}")
+print(f"Total VaR from Copula (Combined A, B, C): {VaR_total}")
+print(f"Total ES from Copula (Combined A, B, C): {ES_total}")
+
+
+
+
+
