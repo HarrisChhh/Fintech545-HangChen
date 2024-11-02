@@ -1,0 +1,229 @@
+# PROBLEM 1
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+from datetime import datetime
+
+# Constants
+S = 165  # Current stock price
+K = 165  # Assume strike price is the same as stock price 
+T = (datetime(2023, 3, 17) - datetime(2023, 3, 3)).days / 365.0  # Time to maturity in years
+r = 0.0525  # Risk-free rate
+q = 0.0053  # Continuously compounded coupon
+vol_range = np.linspace(0.1, 0.8, 100)  # Range of implied volatilities from 10% to 80%
+
+# Black-Scholes formula for call and put options
+def gbsm(S, K, T, r, q, sigma, option_type='call'):
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    
+    if option_type == 'call':
+        option_price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    elif option_type == 'put':
+        option_price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+    return option_price
+
+# Calculate the call and put prices for the range of volatilities
+call_prices = [gbsm(S, K, T, r, q, sigma, option_type='call') for sigma in vol_range]
+put_prices = [gbsm(S, K, T, r, q, sigma, option_type='put') for sigma in vol_range]
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.plot(vol_range, call_prices, label='Call Option Price')
+plt.plot(vol_range, put_prices, label='Put Option Price')
+plt.title('Call and Put Option Prices vs Implied Volatility')
+plt.xlabel('Implied Volatility')
+plt.ylabel('Option Price')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+# PROBLEM 2
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as opt
+from scipy.stats import norm
+from datetime import datetime
+from google.colab import drive
+
+# Load the data
+drive.mount('/content/drive')
+Option_file = '/content/drive/MyDrive/Colab Notebooks/AAPL_Options.csv'
+df = pd.read_csv(Option_file)
+
+# Constants
+S = 170.15  # Current AAPL stock price
+T = (datetime(2023, 12, 15) - datetime(2023, 10, 30)).days / 365.0  # Time to maturity in years
+r = 0.0525  # Risk-free rate
+q = 0.0057  # Dividend rate
+
+# Black-Scholes formula for call and put options
+def gbsm(S, K, T, r, q, sigma, option_type):
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    call_price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    put_price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+    return call_price if option_type == 'call' else put_price
+
+# Implied volatility function
+def implied_volatility(market_price, S, K, T, r, q, option_type):
+    def objective_function(sigma):
+        return gbsm(S, K, T, r, q, sigma, option_type) - market_price
+    
+    try:
+        result = opt.root_scalar(objective_function, bracket=[0.01, 2.0], method='bisect')
+        return result.root if result.converged else np.nan
+    except ValueError:
+        return np.nan  # Return NaN if the root finding fails
+
+# Calculate implied volatility for each option in the DataFrame
+df['Implied_Volatility'] = df.apply(
+    lambda row: implied_volatility(row['Last Price'], S, row['Strike'], T, r, q, row['Type'].lower()),
+    axis=1
+)
+
+# Plot implied volatility vs strike price
+calls = df[df['Type'].str.lower() == 'call']
+puts = df[df['Type'].str.lower() == 'put']
+
+plt.figure(figsize=(10, 6))
+plt.plot(calls['Strike'], calls['Implied_Volatility'], label='Call Options', marker='o')
+plt.plot(puts['Strike'], puts['Implied_Volatility'], label='Put Options', marker='x')
+plt.title('Implied Volatility vs Strike Price')
+plt.xlabel('Strike Price')
+plt.ylabel('Implied Volatility')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+# PROBLEM 3
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+from scipy.optimize import root_scalar
+from datetime import datetime
+from statsmodels.tsa.ar_model import AutoReg
+from google.colab import drive
+
+# Mount Google Drive
+drive.mount('/content/drive')
+
+# Load the data
+problem3_file = '/content/drive/MyDrive/Colab Notebooks/problem3.csv'
+portfolios_df = pd.read_csv(problem3_file)
+
+# Constants
+S = 170.15  # Current AAPL stock price 
+r = 0.0525  # Risk-free rate
+q = 0.0057  # Dividend rate
+current_date = datetime(2023, 10, 30)  # Current date
+
+# Black-Scholes formula for call and put options
+def black_scholes(S, K, T, r, q, sigma, option_type):
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    call_price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    put_price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+    return call_price if option_type == 'call' else put_price
+
+# Implied volatility function
+def implied_volatility(market_price, S, K, T, r, q, option_type):
+    def objective_function(sigma):
+        return black_scholes(S, K, T, r, q, sigma, option_type) - market_price
+    try:
+        result = root_scalar(objective_function, bracket=[0.01, 3.0], method='bisect')
+        return result.root if result.converged else np.nan
+    except ValueError:
+        return np.nan  # Return NaN if the root finding fails
+
+# Convert necessary columns to numeric types
+portfolios_df['Strike'] = pd.to_numeric(portfolios_df['Strike'], errors='coerce')
+portfolios_df['CurrentPrice'] = pd.to_numeric(portfolios_df['CurrentPrice'], errors='coerce')
+portfolios_df['OptionType'] = portfolios_df['OptionType'].fillna('').astype(str)
+
+# Calculate time to maturity and implied volatility if not provided
+portfolios_df['ExpirationDate'] = (pd.to_datetime(portfolios_df['ExpirationDate']) - current_date).dt.days / 365.0
+portfolios_df['Implied_Volatility'] = portfolios_df.apply(
+    lambda row: implied_volatility(row['CurrentPrice'], S, row['Strike'], row['ExpirationDate'], 
+                                   r, q, row['OptionType'].lower()) if pd.isna(row.get('Implied_Volatility')) else row['Implied_Volatility'],
+    axis=1
+)
+
+# Ensure 'Implied_Volatility' column exists
+print("Check for 'Implied_Volatility' column:", 'Implied_Volatility' in portfolios_df.columns)
+
+# Simulate a range of stock prices for portfolio value calculation
+stock_prices = np.linspace(100, 250, 150)
+
+# Calculate portfolio value for each stock price
+portfolio_values = {}
+for index, row in portfolios_df.iterrows():
+    option_type = row['OptionType'].lower()
+    K = row['Strike']
+    T = row['ExpirationDate']
+    sigma = row['Implied_Volatility']
+    
+    # Calculate option price for each stock price
+    option_values = [black_scholes(S, K, T, r, q, sigma, option_type) for S in stock_prices]
+    portfolio_values[row['Holding']] = option_values
+
+# Plot the portfolio values over a range of stock prices
+plt.figure(figsize=(10, 6))
+for portfolio, values in portfolio_values.items():
+    plt.plot(stock_prices, values, label=f'Portfolio {portfolio}')
+plt.title('Portfolio Value vs Stock Price')
+plt.xlabel('Stock Price')
+plt.ylabel('Portfolio Value')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Calculate log returns for AAPL using DailyPrices.csv
+prices_df['Log_Returns'] = np.log(prices_df['AAPL'] / prices_df['AAPL'].shift(1))
+print (prices_df['Log_Returns'])
+mean_log_return = prices_df['Log_Returns'].mean()
+prices_df['Demeaned_Log_Returns'] = prices_df['Log_Returns'] - mean_log_return
+# Fit AR(1) model to demeaned log returns and simulate 10 days ahead
+ar_model = AutoReg(prices_df['Demeaned_Log_Returns'].dropna(), lags=1)
+ar_model_fitted = ar_model.fit()
+phi = ar_model_fitted.params[1]  # AR(1) coefficient
+intercept = ar_model_fitted.params[0]  # Intercept
+
+# Simulate AAPL returns 10 days ahead
+last_return = prices_df['Demeaned_Log_Returns'].dropna().iloc[-1]  # Start with the last observed demeaned return
+simulated_returns = [last_return]
+
+for _ in range(9):  # Simulate 9 more days for a total of 10 days
+    next_return = intercept + phi * simulated_returns[-1] + np.random.normal(scale=ar_model_fitted.resid.std())
+    simulated_returns.append(next_return)
+
+# Calculate simulated AAPL prices based on current price
+simulated_prices = [S * np.exp(np.sum(simulated_returns[:i])) for i in range(1, 11)]
+
+# Calculate Mean, VaR, and ES for the simulated prices
+mean_price = np.mean(simulated_prices)
+VaR_95 = np.percentile(simulated_prices, 5)  # 5% VaR
+ES_95 = np.mean([price for price in simulated_prices if price <= VaR_95])
+
+# Output results
+print(f"Mean price after 10 days: {mean_price}")
+print(f"Value at Risk (VaR) at 95% confidence: {VaR_95}")
+print(f"Expected Shortfall (ES) at 95% confidence: {ES_95}")
+
+# Plot simulated AAPL prices and VaR/ES
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, 11), simulated_prices, marker='o', color='b', label='Simulated Prices')
+plt.axhline(y=VaR_95, color='r', linestyle='--', label='VaR at 95% Confidence')
+plt.axhline(y=ES_95, color='g', linestyle='--', label='ES at 95% Confidence')
+plt.title('Simulated AAPL Prices Over 10 Days')
+plt.xlabel('Days Ahead')
+plt.ylabel('Simulated AAPL Price')
+plt.legend()
+plt.grid(True)
+plt.show()
