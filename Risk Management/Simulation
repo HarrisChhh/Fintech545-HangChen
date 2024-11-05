@@ -1,0 +1,10 @@
+# from risk_management.simulation import monte_carlo_simulation
+
+
+
+import numpy as np
+
+def monte_carlo_simulation(data, num_simulations=10000):
+    means = np.mean(data, axis=0)
+    cov_matrix = np.cov(data, rowvar=False)
+    return np.random.multivariate_normal(means, cov_matrix, num_simulations)
