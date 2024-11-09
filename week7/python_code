@@ -132,3 +132,244 @@ print(f"Call Price (Binomial, with dividend): {call_price_binomial_dividend:.4f}
 print(f"Put Price (Binomial, with dividend): {put_price_binomial_dividend:.4f}")
 print("Call Option Greeks (Binomial Tree):", call_greeks_bt)
 print("Put Option Greeks (Binomial Tree):", put_greeks_bt)
+
+
+# Problem 2
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as opt
+from scipy.optimize import brentq
+from scipy.stats import norm
+from datetime import datetime
+from google.colab import drive
+
+#  load problem2.csv
+drive.mount('/content/drive')
+portfolio_path = '/content/drive/MyDrive/Colab Notebooks/problem2.csv'
+portfolio_df = pd.read_csv(portfolio_path)
+
+daily_prices_path = '/content/drive/MyDrive/Colab Notebooks/DailyPrices.csv'
+daily_prices_df = pd.read_csv(daily_prices_path)
+
+daily_prices_df['Date'] = pd.to_datetime(daily_prices_df['Date'])
+daily_prices_df.set_index('Date', inplace=True)
+
+
+# Black-Scholes formula with discrete dividend adjustment
+def black_scholes_discrete_dividend(S, K, T, r, dividend, t_div, sigma, option_type="call"):
+    # Calculate the present value of the dividend
+    PV_dividend = dividend * np.exp(-r * t_div)
+    # Adjusted stock price
+    S_adj = S - PV_dividend
+
+    # Calculate d1 and d2 using the adjusted stock price
+    d1 = (np.log(S_adj / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+
+    # Compute the price for a call or put option
+    if option_type == "call":
+        price = S_adj * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    elif option_type == "put":
+        price = K * np.exp(-r * T) * norm.cdf(-d2) - S_adj * norm.cdf(-d1)
+    return price
+
+# Implied volatility calculation
+def implied_volatility_discrete_dividend(S, K, T, r, dividend, t_div, market_price, option_type="call", tol=1e-5, max_iter=100):
+    sigma = 0.2  # Initial guess for implied volatility
+    for i in range(max_iter):
+        price = black_scholes_discrete_dividend(S, K, T, r, dividend, t_div, sigma, option_type)
+        # Calculate d1 for vega calculation
+        PV_dividend = dividend * np.exp(-r * t_div)
+        S_adj = S - PV_dividend
+        d1 = (np.log(S_adj / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        vega = S_adj * norm.pdf(d1) * np.sqrt(T)
+        
+        # Newton-Raphson update for implied volatility
+        price_diff = price - market_price
+        if abs(price_diff) < tol:
+            return sigma
+        
+        sigma -= price_diff / vega  # Update implied volatility
+
+# straddle call
+S = 165  
+K = 150  
+current_date = datetime(2023, 3, 3)
+div_date = datetime(2023, 3, 15)
+expiration_date = datetime(2023, 4, 21)
+T = (expiration_date - current_date).days / 365
+r = 0.0425 
+dividend = 1
+t_div = (div_date - current_date).days / 365
+market_price_call = 6.8  
+market_price_put = 4.85
+
+iv_call = 0 #implied_volatility_discrete_dividend(S, K, T, r, dividend, t_div, market_price_call, option_type="call")
+iv_put = implied_volatility_discrete_dividend(S, K, T, r, dividend, t_div, market_price_put, option_type="put")
+
+print(f"：{iv_call}")
+print(f"：{iv_put}")
+
+def calculate_option_delta(S, K, T, r, sigma, option_type="call"):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+    if option_type == "call":
+        return norm.cdf(d1)
+    elif option_type == "put":
+        return -norm.cdf(-d1)
+
+calculate_option_delta(S, K, T, r, iv_call, option_type="call")
+calculate_option_delta(S, K, T, r, iv_put, option_type="put")
+
+np.random.seed(0)
+simulated_returns = np.random.normal(0, iv_call / np.sqrt(252), int(T * 252))  # Example using iv_call
+simulated_prices = S * np.exp(np.cumsum(simulated_returns))
+
+call_payoffs = np.maximum(simulated_prices - K, 0)
+put_payoffs = np.maximum(K - simulated_prices, 0)
+straddle_payoffs = call_payoffs + put_payoffs
+straddle_losses = straddle_payoffs - (call_payoffs[0] + put_payoffs[0])
+
+
+results = []
+
+for idx, row in portfolio_df.iterrows():
+    portfolio_name = row['Portfolio']
+    holding = row['Holding']
+    option_price = row['CurrentPrice']
+    
+    portfolio_value = option_price * holding
+    delta = row.get('Delta', 1)  
+    
+
+    var, es = calculate_var_es(portfolio_value, delta, std_dev, risk_free_rate, dividend_payment)
+
+    results.append({
+        'Portfolio': portfolio_name,
+        'Value': portfolio_value,
+        'VaR': var,
+        'ES': es
+    })
+
+results_df = pd.DataFrame(results)
+print(results_df)
+
+
+
+
+# Problem 3
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+from scipy.optimize import minimize
+
+# Load data
+ff3 = '/content/drive/MyDrive/Colab Notebooks/F-F_Research_Data_Factors_daily.CSV'
+ff_momentum = '/content/drive/MyDrive/Colab Notebooks/F-F_Momentum_Factor_daily.CSV'
+ff3_data = pd.read_csv(ff3)
+ff_momentum_data = pd.read_csv(ff_momentum)
+
+# Check Fama-French 3 Factor Data
+print("Fama-French 3 Factor Data:")
+print(ff3_data.head())
+
+# Check Momentum Factor Data
+print("Momentum Factor Data:")
+print(ff_momentum_data.head())
+
+# Assuming stock daily returns data is loaded
+stock_returns = ...  # Load or define your stock returns data here
+
+# Data preprocessing
+ff3_data[['Mkt-RF', 'SMB', 'HML', 'RF']] /= 100  # Divide Fama-French factor values by 100 
+ff_momentum_data['Mom   '] /= 100  # Divide momentum factor values by 100
+
+# Convert date columns to datetime format
+ff3_data['Date'] = pd.to_datetime(ff3_data['Date'], errors='coerce')
+ff_momentum_data['Date'] = pd.to_datetime(ff_momentum_data['Date'], errors='coerce')
+
+# Merge factor data
+factor_data = pd.merge(ff3_data, ff_momentum_data, on='Date')
+factor_data.set_index('Date', inplace=True)
+
+# Fit the four-factor model
+DailyPrices = '/content/drive/MyDrive/Colab Notebooks/DailyPrices.csv'
+daily_prices = pd.read_csv(DailyPrices)
+daily_prices['Date'] = pd.to_datetime(daily_prices['Date'])
+daily_prices.set_index('Date', inplace=True)
+stock_returns = daily_prices.pct_change().dropna()
+results = {}
+for stock in stock_returns.columns:
+    y = stock_returns[stock] - factor_data['RF']  # Calculate excess returns
+    X = factor_data[['Mkt-RF', 'SMB', 'HML', 'Mom   ']]
+    X = sm.add_constant(X)  # Add intercept
+    regression_data = pd.concat([y, X], axis=1).dropna()
+    y_clean = regression_data.iloc[:, 0]
+    X_clean = regression_data.iloc[:, 1:]
+
+    # Check if data is empty
+    if y_clean.empty or X_clean.empty:
+        continue
+
+    # Fit OLS regression model
+    model = sm.OLS(y_clean, X_clean).fit()
+    results[stock] = model
+
+# Calculate expected annual returns
+expected_returns = {}
+for stock, model in results.items():
+    factors_mean = factor_data[['Mkt-RF', 'SMB', 'HML', 'Mom   ']].mean()  # Factor means
+    intercept = model.params['const']  # Intercept
+    expected_return = intercept + np.dot(model.params[1:], factors_mean)  # Calculate expected return
+    expected_returns[stock] = expected_return * 252  # Annualize return
+
+# Convert results to DataFrame
+expected_returns = pd.DataFrame(list(expected_returns.items()), columns=['Stock', 'Expected Annual Return'])
+print("Expected Annual Returns:")
+print(expected_returns)
+
+# Construct annual covariance matrix
+annualized_returns = stock_returns * np.sqrt(252)  # Annualized adjustment
+cov_matrix = annualized_returns.cov()
+print("Annual Covariance Matrix:")
+print(cov_matrix)
+
+# Efficient portfolio optimization
+# Define the optimization function for maximizing Sharpe ratio
+risk_free_rate = 0.05  # Risk-free rate
+expected_returns_vec = np.array(list(expected_returns['Expected Annual Return']))
+cov_matrix = cov_matrix.values
+
+def portfolio_performance(weights, expected_returns, cov_matrix):
+    portfolio_return = np.dot(weights, expected_returns)
+    portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+    sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
+    return -sharpe_ratio  # Negative for maximizing Sharpe ratio
+
+# Constraints and initial guess
+num_stocks = len(expected_returns_vec)
+constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})  # Sum of weights is 1
+bounds = [(0, 1) for _ in range(num_stocks)]  # Each stock weight between 0 and 1
+initial_weights = np.ones(num_stocks) / num_stocks  # Initial weights equally distributed
+
+# Check if bounds are empty
+print("num_stocks:", num_stocks)
+print("initial_weights:", initial_weights)
+print("Bounds:", bounds)
+
+# Optimization
+try:
+    optimized_result = minimize(portfolio_performance, initial_weights, args=(expected_returns_vec, cov_matrix),
+                                method='SLSQP', bounds=bounds, constraints=constraints)
+
+    # Output optimal weights and Sharpe ratio
+    optimized_weights = optimized_result.x
+    optimized_sharpe_ratio = -optimized_result.fun
+
+    print("Optimal Weights Allocation:")
+    for stock, weight in zip(expected_returns['Stock'], optimized_weights):
+        print(f"{stock}: {weight:.4f}")
+
+    print(f"Portfolio Sharpe Ratio: {optimized_sharpe_ratio:.4f}")
+except ValueError as e:
+    print("Optimization failed, error message:", e)
