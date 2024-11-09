@@ -1,0 +1,131 @@
+import numpy as np
+from scipy.stats import norm
+import math
+from datetime import datetime
+
+# 参数
+S = 151.03       # 当前股价
+K = 165          # 执行价格
+current_date = datetime(2022, 3, 13)
+expiration_date = datetime(2022, 4, 15)
+T = (expiration_date - current_date).days / 365
+r = 0.0425       # 无风险利率
+sigma = 0.2      # 假设波动率 (20%)
+q = 0.0053       # 连续复利股息收益率
+steps = 100      # 二叉树的步骤
+dividend_dates = [29 / 365]  # 股息支付日（相对于到期日）
+dividend_amounts = [0.88]    # 股息金额
+h = 1e-4         # 微小增量，用于有限差分
+
+# Black-Scholes-Merton 公式计算欧式期权价格
+def black_scholes_price(S, K, T, r, sigma, option_type="call", q=0):
+    d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    if option_type == "call":
+        price = S * math.exp(-q * T) * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
+    elif option_type == "put":
+        price = K * math.exp(-r * T) * norm.cdf(-d2) - S * math.exp(-q * T) * norm.cdf(-d1)
+    return price
+
+# 计算希腊字母
+def calculate_greeks(S, K, T, r, sigma, option_type="call", q=0):
+    d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    delta = norm.cdf(d1) if option_type == "call" else -norm.cdf(-d1)
+    gamma = norm.pdf(d1) / (S * sigma * math.sqrt(T))
+    vega = S * math.exp(-q * T) * norm.pdf(d1) * math.sqrt(T)
+    theta = (-S * norm.pdf(d1) * sigma / (2 * math.sqrt(T)) - r * K * math.exp(-r * T) * norm.cdf(d2)) if option_type == "call" else (-S * norm.pdf(d1) * sigma / (2 * math.sqrt(T)) + r * K * math.exp(-r * T) * norm.cdf(-d2))
+    rho = K * T * math.exp(-r * T) * norm.cdf(d2) if option_type == "call" else -K * T * math.exp(-r * T) * norm.cdf(-d2)
+    return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
+
+# 使用有限差分法计算希腊字母
+def finite_difference_greeks(S, K, T, r, sigma, option_type="call", q=0, h=1e-4):
+    delta = (black_scholes_price(S + h, K, T, r, sigma, option_type, q) - black_scholes_price(S - h, K, T, r, sigma, option_type, q)) / (2 * h)
+    gamma = (black_scholes_price(S + h, K, T, r, sigma, option_type, q) - 2 * black_scholes_price(S, K, T, r, sigma, option_type, q) + black_scholes_price(S - h, K, T, r, sigma, option_type, q)) / (h ** 2)
+    vega = (black_scholes_price(S, K, T, r, sigma + h, option_type, q) - black_scholes_price(S, K, T, r, sigma - h, option_type, q)) / (2 * h)
+    theta = (black_scholes_price(S, K, T - h, r, sigma, option_type, q) - black_scholes_price(S, K, T + h, r, sigma, option_type, q)) / (2 * h)
+    rho = (black_scholes_price(S, K, T, r + h, sigma, option_type, q) - black_scholes_price(S, K, T, r - h, sigma, option_type, q)) / (2 * h)
+    return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
+
+# 二叉树模型实现
+def binomial_tree_american_option(S, K, T, r, sigma, steps, option_type="call", dividend_dates=None, dividend_amounts=None):
+    dt = T / steps
+    u = math.exp(sigma * math.sqrt(dt))
+    d = 1 / u
+    p = (math.exp(r * dt) - d) / (u - d)
+    prices = np.zeros((steps + 1, steps + 1))
+    values = np.zeros((steps + 1, steps + 1))
+    for i in range(steps + 1):
+        prices[steps, i] = S * (u ** i) * (d ** (steps - i))
+    for i in range(steps + 1):
+        values[steps, i] = max(0, prices[steps, i] - K) if option_type == "call" else max(0, K - prices[steps, i])
+    for j in range(steps - 1, -1, -1):
+        for i in range(j + 1):
+            stock_price = prices[j, i]
+            if dividend_dates and dividend_amounts:
+                for date, amount in zip(dividend_dates, dividend_amounts):
+                    if j * dt >= date:
+                        stock_price -= amount
+            values[j, i] = max(stock_price - K if option_type == "call" else K - stock_price, math.exp(-r * dt) * (p * values[j + 1, i + 1] + (1 - p) * values[j + 1, i]))
+    return values[0, 0]
+
+# 比较看涨和看跌期权的希腊字母（BSM vs 有限差分）
+call_greeks_bsm = calculate_greeks(S, K, T, r, sigma, "call", q)
+put_greeks_bsm = calculate_greeks(S, K, T, r, sigma, "put", q)
+call_greeks_fd = finite_difference_greeks(S, K, T, r, sigma, "call", q, h)
+put_greeks_fd = finite_difference_greeks(S, K, T, r, sigma, "put", q, h)
+
+# BSM 和二叉树的期权价格对比
+call_price_bsm = black_scholes_price(S, K, T, r, sigma, "call", q)
+put_price_bsm = black_scholes_price(S, K, T, r, sigma, "put", q)
+call_price_binomial_dividend = binomial_tree_american_option(S, K, T, r, sigma, steps, "call", dividend_dates, dividend_amounts)
+put_price_binomial_dividend = binomial_tree_american_option(S, K, T, r, sigma, steps, "put", dividend_dates, dividend_amounts)
+call_price_binomial = binomial_tree_american_option(S, K, T, r, sigma, steps, "call", dividend_dates = 0, dividend_amounts = 0)
+put_price_binomial = binomial_tree_american_option(S, K, T, r, sigma, steps, "put", dividend_dates = 0, dividend_amounts = 0)
+
+def binomial_tree_greeks(S, K, T, r, sigma, steps, option_type="call", dividend_dates=None, dividend_amounts=None, h=1e-4):
+    # Delta: Sensitivity to price change
+    delta = (binomial_tree_american_option(S + h, K, T, r, sigma, steps, option_type, dividend_dates, dividend_amounts) - 
+             binomial_tree_american_option(S - h, K, T, r, sigma, steps, option_type, dividend_dates, dividend_amounts)) / (2 * h)
+    
+    # Gamma: Sensitivity to the rate of change of the stock price
+    gamma = (binomial_tree_american_option(S + h, K, T, r, sigma, steps, option_type, dividend_dates, dividend_amounts) - 
+             2 * binomial_tree_american_option(S, K, T, r, sigma, steps, option_type, dividend_dates, dividend_amounts) + 
+             binomial_tree_american_option(S - h, K, T, r, sigma, steps, option_type, dividend_dates, dividend_amounts)) / (h ** 2)
+    
+    # Vega: Sensitivity to volatility change
+    vega = (binomial_tree_american_option(S, K, T, r, sigma + h, steps, option_type, dividend_dates, dividend_amounts) - 
+            binomial_tree_american_option(S, K, T, r, sigma - h, steps, option_type, dividend_dates, dividend_amounts)) / (2 * h)
+    
+    # Theta: Sensitivity to time decay
+    theta = (binomial_tree_american_option(S, K, T - h, r, sigma, steps, option_type, dividend_dates, dividend_amounts) - 
+             binomial_tree_american_option(S, K, T + h, r, sigma, steps, option_type, dividend_dates, dividend_amounts)) / (2 * h)
+    
+    # Rho: Sensitivity to interest rate change
+    rho = (binomial_tree_american_option(S, K, T, r + h, sigma, steps, option_type, dividend_dates, dividend_amounts) - 
+           binomial_tree_american_option(S, K, T, r - h, sigma, steps, option_type, dividend_dates, dividend_amounts)) / (2 * h)
+    
+    return {
+        "delta": delta,
+        "gamma": gamma,
+        "vega": vega,
+        "theta": theta,
+        "rho": rho
+    }
+call_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, "call", q)
+put_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, "put", q)
+# 输出结果
+print("BSM vs Finite Difference Greeks Comparison:")
+print("Call Option Greeks (BSM):", call_greeks_bsm)
+print("Call Option Greeks (Finite Difference):", call_greeks_fd)
+print("Put Option Greeks (BSM):", put_greeks_bsm)
+print("Put Option Greeks (Finite Difference):", put_greeks_fd)
+print("\nOption Prices Comparison (BSM vs Binomial):")
+print(f"Call Price (BSM): {call_price_bsm:.4f}")
+print(f"Put Price (BSM): {put_price_bsm:.4f}")
+print(f"Call Price (Binomial, without dividend): {call_price_binomial:.4f}")
+print(f"Put Price (Binomial, without dividend): {put_price_binomial:.4f}")
+print(f"Call Price (Binomial, with dividend): {call_price_binomial_dividend:.4f}")
+print(f"Put Price (Binomial, with dividend): {put_price_binomial_dividend:.4f}")
+print("Call Option Greeks (Binomial Tree):", call_greeks_bt)
+print("Put Option Greeks (Binomial Tree):", put_greeks_bt)
