@@ -1,23 +1,25 @@
+# Problem 1
+
 import numpy as np
 from scipy.stats import norm
 import math
 from datetime import datetime
 
-# data
-S = 151.03       # 当前股价
-K = 165          # 执行价格
+# Parameters
+S = 151.03       # Current stock price
+K = 165          # Strike price
 current_date = datetime(2022, 3, 13)
 expiration_date = datetime(2022, 4, 15)
-T = (expiration_date - current_date).days / 365
-r = 0.0425       # 无风险利率
-sigma = 0.2      # 假设波动率 (20%)
-q = 0.0053       # 连续复利股息收益率
-steps = 100     # 二叉树的步骤
-dividend_dates = [29 / 365]  # 股息支付日（相对于到期日）
-dividend_amounts = [0.88]    # 股息金额
-h = 1e-4         # 微小增量，用于有限差分
+T = (expiration_date - current_date).days / 365  # Time to expiration (in years)
+r = 0.0425       # Risk-free rate
+sigma = 0.2      # Assumed volatility (20%)
+q = 0.0053       # Continuously compounded dividend yield
+steps = 100      # Steps in the binomial tree
+dividend_dates = [29 / 365]  # Dividend payment date (relative to expiration date)
+dividend_amounts = [0.88]    # Dividend amount
+h = 1e-4         # Small increment for finite difference method
 
-# Black-Scholes-Merton 公式计算欧式期权价格
+# Black-Scholes-Merton formula to calculate European option price
 def black_scholes_price(S, K, T, r, sigma, option_type="call", q=0):
     d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
     d2 = d1 - sigma * math.sqrt(T)
@@ -27,7 +29,7 @@ def black_scholes_price(S, K, T, r, sigma, option_type="call", q=0):
         price = K * math.exp(-r * T) * norm.cdf(-d2) - S * math.exp(-q * T) * norm.cdf(-d1)
     return price
 
-# 计算希腊字母
+# Calculate Greeks
 def calculate_greeks(S, K, T, r, sigma, option_type="call", q=0):
     d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
     d2 = d1 - sigma * math.sqrt(T)
@@ -38,7 +40,7 @@ def calculate_greeks(S, K, T, r, sigma, option_type="call", q=0):
     rho = K * T * math.exp(-r * T) * norm.cdf(d2) if option_type == "call" else -K * T * math.exp(-r * T) * norm.cdf(-d2)
     return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
 
-# 使用有限差分法计算希腊字母
+# Calculate Greeks using the finite difference method
 def finite_difference_greeks(S, K, T, r, sigma, option_type="call", q=0, h=1e-4):
     delta = (black_scholes_price(S + h, K, T, r, sigma, option_type, q) - black_scholes_price(S - h, K, T, r, sigma, option_type, q)) / (2 * h)
     gamma = (black_scholes_price(S + h, K, T, r, sigma, option_type, q) - 2 * black_scholes_price(S, K, T, r, sigma, option_type, q) + black_scholes_price(S - h, K, T, r, sigma, option_type, q)) / (h ** 2)
@@ -47,7 +49,7 @@ def finite_difference_greeks(S, K, T, r, sigma, option_type="call", q=0, h=1e-4)
     rho = (black_scholes_price(S, K, T, r + h, sigma, option_type, q) - black_scholes_price(S, K, T, r - h, sigma, option_type, q)) / (2 * h)
     return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
 
-# 二叉树模型实现
+# Binomial tree model implementation
 def binomial_tree_american_option(S, K, T, r, sigma, steps, option_type="call", dividend_dates=None, dividend_amounts=None):
     dt = T / steps
     u = math.exp(sigma * math.sqrt(dt))
@@ -69,13 +71,13 @@ def binomial_tree_american_option(S, K, T, r, sigma, steps, option_type="call", 
             values[j, i] = max(stock_price - K if option_type == "call" else K - stock_price, math.exp(-r * dt) * (p * values[j + 1, i + 1] + (1 - p) * values[j + 1, i]))
     return values[0, 0]
 
-# 比较看涨和看跌期权的希腊字母（BSM vs 有限差分）
+# Compare Greek letters for call and put options (BSM vs Finite Difference)
 call_greeks_bsm = calculate_greeks(S, K, T, r, sigma, "call", q)
 put_greeks_bsm = calculate_greeks(S, K, T, r, sigma, "put", q)
 call_greeks_fd = finite_difference_greeks(S, K, T, r, sigma, "call", q, h)
 put_greeks_fd = finite_difference_greeks(S, K, T, r, sigma, "put", q, h)
 
-# BSM 和二叉树的期权价格对比
+# Option prices comparison between BSM and binomial tree
 call_price_bsm = black_scholes_price(S, K, T, r, sigma, "call", q)
 put_price_bsm = black_scholes_price(S, K, T, r, sigma, "put", q)
 call_price_binomial_dividend = binomial_tree_american_option(S, K, T, r, sigma, steps, "call", dividend_dates, dividend_amounts)
@@ -114,7 +116,8 @@ def binomial_tree_greeks(S, K, T, r, sigma, steps, option_type="call", dividend_
     }
 call_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, int(steps), "call", q)
 put_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, int(steps), "put", q)
-# 输出结果
+
+# result
 print("BSM vs Finite Difference Greeks Comparison:")
 print("Call Option Greeks (BSM):", call_greeks_bsm)
 print("Call Option Greeks (Finite Difference):", call_greeks_fd)
