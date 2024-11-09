@@ -3,7 +3,7 @@ from scipy.stats import norm
 import math
 from datetime import datetime
 
-# 参数
+# data
 S = 151.03       # 当前股价
 K = 165          # 执行价格
 current_date = datetime(2022, 3, 13)
@@ -12,7 +12,7 @@ T = (expiration_date - current_date).days / 365
 r = 0.0425       # 无风险利率
 sigma = 0.2      # 假设波动率 (20%)
 q = 0.0053       # 连续复利股息收益率
-steps = 100      # 二叉树的步骤
+steps = 100     # 二叉树的步骤
 dividend_dates = [29 / 365]  # 股息支付日（相对于到期日）
 dividend_amounts = [0.88]    # 股息金额
 h = 1e-4         # 微小增量，用于有限差分
@@ -112,8 +112,8 @@ def binomial_tree_greeks(S, K, T, r, sigma, steps, option_type="call", dividend_
         "theta": theta,
         "rho": rho
     }
-call_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, "call", q)
-put_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, "put", q)
+call_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, int(steps), "call", q)
+put_greeks_bt = binomial_tree_greeks(S, K, T, r, sigma, int(steps), "put", q)
 # 输出结果
 print("BSM vs Finite Difference Greeks Comparison:")
 print("Call Option Greeks (BSM):", call_greeks_bsm)
