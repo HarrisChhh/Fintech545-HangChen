@@ -260,116 +260,77 @@ print(results_df)
 # Problem 3
 import pandas as pd
 import numpy as np
-import statsmodels.api as sm
 from scipy.optimize import minimize
 
-# Load data
-ff3 = '/content/drive/MyDrive/Colab Notebooks/F-F_Research_Data_Factors_daily.CSV'
-ff_momentum = '/content/drive/MyDrive/Colab Notebooks/F-F_Momentum_Factor_daily.CSV'
-ff3_data = pd.read_csv(ff3)
-ff_momentum_data = pd.read_csv(ff_momentum)
+# 1. load data
+fama_french_data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/F-F_Research_Data_Factors_daily.CSV')
+momentum_data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/F-F_Momentum_Factor_daily.CSV')
+daily_prices = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/DailyPrices.csv')
 
-# Check Fama-French 3 Factor Data
-print("Fama-French 3 Factor Data:")
-print(ff3_data.head())
+#  2. Data Preprocessing
+# Convert factor values from percentages to decimals
+fama_french_data[['Mkt-RF', 'SMB', 'HML', 'RF']] /= 100
+momentum_data.columns = momentum_data.columns.str.strip()  # Remove extra spaces from column names
+momentum_data['Mom'] /= 100
 
-# Check Momentum Factor Data
-print("Momentum Factor Data:")
-print(ff_momentum_data.head())
+# Convert date columns to a consistent format to merge the data
+fama_french_data['Date'] = fama_french_data['Date'].astype(str)
+momentum_data['Date'] = momentum_data['Date'].astype(str)
+merged_factors = pd.merge(fama_french_data, momentum_data, on='Date')
 
-# Assuming stock daily returns data is loaded
-stock_returns = ...  # Load or define your stock returns data here
+# Extract selected stocks' daily prices and calculate daily returns
+selected_stocks = ["AAPL", "META", "UNH", "MA", "MSFT", "NVDA", "HD", "PFE", "AMZN", 
+                   "BRK-B", "PG", "XOM", "TSLA", "JPM", "V", "DIS", "GOOGL", "JNJ", 
+                   "BAC", "CSCO"]
+selected_data = daily_prices[["Date"] + selected_stocks].copy()
+selected_data["Date"] = pd.to_datetime(selected_data["Date"])
+selected_data = selected_data.sort_values(by="Date")
+returns_data = selected_data[selected_stocks].pct_change().dropna()
 
-# Data preprocessing
-ff3_data[['Mkt-RF', 'SMB', 'HML', 'RF']] /= 100  # Divide Fama-French factor values by 100 
-ff_momentum_data['Mom   '] /= 100  # Divide momentum factor values by 100
+# 3. Calculate Expected Annual Returns and Covariance Matrix
+# Expected annual returns
+expected_annual_return = returns_data.mean() * 252
+# Annualized covariance matrix
+annual_covariance_matrix = returns_data.cov() * 252
 
-# Convert date columns to datetime format
-ff3_data['Date'] = pd.to_datetime(ff3_data['Date'], errors='coerce')
-ff_momentum_data['Date'] = pd.to_datetime(ff_momentum_data['Date'], errors='coerce')
+# Display the annual covariance matrix for the 20 stocks
+print("Annual Covariance Matrix for the 20 stocks:")
+print(annual_covariance_matrix)
 
-# Merge factor data
-factor_data = pd.merge(ff3_data, ff_momentum_data, on='Date')
-factor_data.set_index('Date', inplace=True)
+# 4. Portfolio Optimization
+# Risk-free rate
+risk_free_rate = 0.05
 
-# Fit the four-factor model
-DailyPrices = '/content/drive/MyDrive/Colab Notebooks/DailyPrices.csv'
-daily_prices = pd.read_csv(DailyPrices)
-daily_prices['Date'] = pd.to_datetime(daily_prices['Date'])
-daily_prices.set_index('Date', inplace=True)
-stock_returns = daily_prices.pct_change().dropna()
-results = {}
-for stock in stock_returns.columns:
-    y = stock_returns[stock] - factor_data['RF']  # Calculate excess returns
-    X = factor_data[['Mkt-RF', 'SMB', 'HML', 'Mom   ']]
-    X = sm.add_constant(X)  # Add intercept
-    regression_data = pd.concat([y, X], axis=1).dropna()
-    y_clean = regression_data.iloc[:, 0]
-    X_clean = regression_data.iloc[:, 1:]
+# Convert to numpy arrays for optimization
+expected_returns = expected_annual_return.values
+cov_matrix = annual_covariance_matrix.values
+num_assets = len(selected_stocks)
 
-    # Check if data is empty
-    if y_clean.empty or X_clean.empty:
-        continue
-
-    # Fit OLS regression model
-    model = sm.OLS(y_clean, X_clean).fit()
-    results[stock] = model
-
-# Calculate expected annual returns
-expected_returns = {}
-for stock, model in results.items():
-    factors_mean = factor_data[['Mkt-RF', 'SMB', 'HML', 'Mom   ']].mean()  # Factor means
-    intercept = model.params['const']  # Intercept
-    expected_return = intercept + np.dot(model.params[1:], factors_mean)  # Calculate expected return
-    expected_returns[stock] = expected_return * 252  # Annualize return
-
-# Convert results to DataFrame
-expected_returns = pd.DataFrame(list(expected_returns.items()), columns=['Stock', 'Expected Annual Return'])
-print("Expected Annual Returns:")
-print(expected_returns)
-
-# Construct annual covariance matrix
-annualized_returns = stock_returns * np.sqrt(252)  # Annualized adjustment
-cov_matrix = annualized_returns.cov()
-print("Annual Covariance Matrix:")
-print(cov_matrix)
-
-# Efficient portfolio optimization
-# Define the optimization function for maximizing Sharpe ratio
-risk_free_rate = 0.05  # Risk-free rate
-expected_returns_vec = np.array(list(expected_returns['Expected Annual Return']))
-cov_matrix = cov_matrix.values
-
-def portfolio_performance(weights, expected_returns, cov_matrix):
+# Define the objective function (negative Sharpe Ratio)
+def neg_sharpe_ratio(weights):
     portfolio_return = np.dot(weights, expected_returns)
     portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
     sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
-    return -sharpe_ratio  # Negative for maximizing Sharpe ratio
+    return -sharpe_ratio
 
-# Constraints and initial guess
-num_stocks = len(expected_returns_vec)
-constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})  # Sum of weights is 1
-bounds = [(0, 1) for _ in range(num_stocks)]  # Each stock weight between 0 and 1
-initial_weights = np.ones(num_stocks) / num_stocks  # Initial weights equally distributed
+# Constraints: weights sum to 1
+constraints = ({'type': 'eq', 'fun': lambda weights: np.sum(weights) - 1})
+# Bounds: weights between 0 and 1
+bounds = tuple((0, 1) for _ in range(num_assets))
+# Initial guess for weights (equal distribution)
+initial_guess = num_assets * [1. / num_assets,]
 
-# Check if bounds are empty
-print("num_stocks:", num_stocks)
-print("initial_weights:", initial_weights)
-print("Bounds:", bounds)
+# Optimization to find weights that maximize the Sharpe Ratio
+result = minimize(neg_sharpe_ratio, initial_guess, method='SLSQP', bounds=bounds, constraints=constraints)
 
-# Optimization
-try:
-    optimized_result = minimize(portfolio_performance, initial_weights, args=(expected_returns_vec, cov_matrix),
-                                method='SLSQP', bounds=bounds, constraints=constraints)
+# Extract optimized portfolio weights, expected return, volatility, and Sharpe ratio
+optimal_weights = result.x
+optimal_return = np.dot(optimal_weights, expected_returns)
+optimal_volatility = np.sqrt(np.dot(optimal_weights.T, np.dot(cov_matrix, optimal_weights)))
+optimal_sharpe_ratio = (optimal_return - risk_free_rate) / optimal_volatility
 
-    # Output optimal weights and Sharpe ratio
-    optimized_weights = optimized_result.x
-    optimized_sharpe_ratio = -optimized_result.fun
-
-    print("Optimal Weights Allocation:")
-    for stock, weight in zip(expected_returns['Stock'], optimized_weights):
-        print(f"{stock}: {weight:.4f}")
-
-    print(f"Portfolio Sharpe Ratio: {optimized_sharpe_ratio:.4f}")
-except ValueError as e:
-    print("Optimization failed, error message:", e)
+# Print the results
+print("Optimal Weight Allocation:", optimal_weights)
+print("Expected Annual Return:", optimal_return)
+print("Annual Volatility:", optimal_volatility)
+print("Sharpe Ratio:", optimal_sharpe_ratio)
