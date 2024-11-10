@@ -144,10 +144,10 @@ from scipy.stats import norm
 from datetime import datetime
 from google.colab import drive
 
-#  load problem2.csv
 drive.mount('/content/drive')
 portfolio_path = '/content/drive/MyDrive/Colab Notebooks/problem2.csv'
 portfolio_df = pd.read_csv(portfolio_path)
+
 
 daily_prices_path = '/content/drive/MyDrive/Colab Notebooks/DailyPrices.csv'
 daily_prices_df = pd.read_csv(daily_prices_path)
@@ -156,41 +156,50 @@ daily_prices_df['Date'] = pd.to_datetime(daily_prices_df['Date'])
 daily_prices_df.set_index('Date', inplace=True)
 
 
-# Black-Scholes formula with discrete dividend adjustment
 def black_scholes_discrete_dividend(S, K, T, r, dividend, t_div, sigma, option_type="call"):
-    # Calculate the present value of the dividend
+   
     PV_dividend = dividend * np.exp(-r * t_div)
-    # Adjusted stock price
+ 
     S_adj = S - PV_dividend
 
-    # Calculate d1 and d2 using the adjusted stock price
+ 
     d1 = (np.log(S_adj / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
 
-    # Compute the price for a call or put option
+
+    print(f"S_adj={S_adj}, d1={d1}, d2={d2}, sigma={sigma}")
+
+
     if option_type == "call":
         price = S_adj * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
     elif option_type == "put":
         price = K * np.exp(-r * T) * norm.cdf(-d2) - S_adj * norm.cdf(-d1)
+    
+    print(f"price={price}")
     return price
 
 # Implied volatility calculation
-def implied_volatility_discrete_dividend(S, K, T, r, dividend, t_div, market_price, option_type="call", tol=1e-5, max_iter=100):
-    sigma = 0.2  # Initial guess for implied volatility
+def implied_volatility_discrete_dividend_bisection(S, K, T, r, dividend, t_div, market_price, option_type="call", tol=1e-4, max_iter=100):
+
+    sigma_low, sigma_high = 1e-3, 3.0  
+    sigma = (sigma_low + sigma_high) / 2  
+    
     for i in range(max_iter):
         price = black_scholes_discrete_dividend(S, K, T, r, dividend, t_div, sigma, option_type)
-        # Calculate d1 for vega calculation
-        PV_dividend = dividend * np.exp(-r * t_div)
-        S_adj = S - PV_dividend
-        d1 = (np.log(S_adj / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        vega = S_adj * norm.pdf(d1) * np.sqrt(T)
-        
-        # Newton-Raphson update for implied volatility
         price_diff = price - market_price
+
         if abs(price_diff) < tol:
             return sigma
-        
-        sigma -= price_diff / vega  # Update implied volatility
+
+        if price_diff > 0:
+            sigma_high = sigma
+        else:
+            sigma_low = sigma
+
+        sigma = (sigma_low + sigma_high) / 2
+
+    return None 
+
 
 # straddle call
 S = 165  
@@ -199,61 +208,115 @@ current_date = datetime(2023, 3, 3)
 div_date = datetime(2023, 3, 15)
 expiration_date = datetime(2023, 4, 21)
 T = (expiration_date - current_date).days / 365
-r = 0.0425 
+r = 0.0425  
 dividend = 1
 t_div = (div_date - current_date).days / 365
 market_price_call = 6.8  
 market_price_put = 4.85
 
-iv_call = 0 #implied_volatility_discrete_dividend(S, K, T, r, dividend, t_div, market_price_call, option_type="call")
-iv_put = implied_volatility_discrete_dividend(S, K, T, r, dividend, t_div, market_price_put, option_type="put")
 
-print(f"：{iv_call}")
-print(f"：{iv_put}")
+iv_call = 0.0011 # By binomial tree model
+iv_put = implied_volatility_discrete_dividend_bisection(S, K, T, r, dividend, t_div, market_price_put, option_type="put")
 
-def calculate_option_delta(S, K, T, r, sigma, option_type="call"):
+print(f"iv(call)）：{iv_call}")
+print(f"iv(put)：{iv_put}")
+
+def calculate_option_delta(S, K, T, r, sigma, option_type = "call"):
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
     if option_type == "call":
         return norm.cdf(d1)
     elif option_type == "put":
         return -norm.cdf(-d1)
 
-calculate_option_delta(S, K, T, r, iv_call, option_type="call")
-calculate_option_delta(S, K, T, r, iv_put, option_type="put")
+delta_call = calculate_option_delta(S, K, T, r, iv_call, option_type="call")
+delta_put = calculate_option_delta(S, K, T, r, iv_put, option_type="put")
+print(f"delta of call：{delta_call}")
+print(f"delta of put：{delta_put}")
 
-np.random.seed(0)
-simulated_returns = np.random.normal(0, iv_call / np.sqrt(252), int(T * 252))  # Example using iv_call
-simulated_prices = S * np.exp(np.cumsum(simulated_returns))
+def calculate_var_es_delta_normal(market_price, delta, mu, sigma, dividend, r, confidence_level=0.95, holding = 1):
+    z_alpha = norm.ppf(1 - confidence_level)
+    adjusted_mu = mu - dividend + r
+    var = (adjusted_mu + z_alpha * sigma) * holding
+    es = (adjusted_mu + (sigma * norm.pdf(z_alpha) / (1 - confidence_level))) * holding
+    return var, es
 
-call_payoffs = np.maximum(simulated_prices - K, 0)
-put_payoffs = np.maximum(K - simulated_prices, 0)
-straddle_payoffs = call_payoffs + put_payoffs
-straddle_losses = straddle_payoffs - (call_payoffs[0] + put_payoffs[0])
+vares_call= calculate_var_es_delta_normal(market_price_call, delta_call, 0, iv_call, dividend, r, confidence_level=0.95, holding = 1)
+vares_put= calculate_var_es_delta_normal(market_price_put, delta_put, 0, iv_put, dividend, r, confidence_level=0.95, holding = 1)
+var_straddle_total = vares_call[0] + vares_put[0]
+es_straddle_total = vares_call[1] + vares_put[1]
+
+print(f"VaR&ES of call at {confidence_level*100}% confidence level: {vares_call}")
+print(f"VaR&ES of put at {confidence_level*100}% confidence level: {vares_put}")
+print(f"Total VaR of straddle at {confidence_level*100}% confidence level: {var_straddle_total}")
+print(f"Total ES of straddle at {confidence_level*100}% confidence level: {es_straddle_total}")
+
+# SynLong
+
+vares_call_synlong= vares_call
+vares_put_synlong= calculate_var_es_delta_normal(market_price_put, delta_put, 0, iv_put, dividend, r, confidence_level=0.95, holding = -1)   # holding = -1
+var_SynLong_total = vares_call_synlong[0] + vares_put_synlong[0]
+es_SynLong_total = vares_call_synlong[1] + vares_put_synlong[1]
+
+print(f"VaR&ES of call at {confidence_level*100}% confidence level: {vares_call_synlong}")
+print(f"VaR&ES of put at {confidence_level*100}% confidence level: {vares_put_synlong}")
+print(f"Total VaR of straddle at {confidence_level*100}% confidence level: {var_SynLong_total}")
+print(f"Total ES of straddle at {confidence_level*100}% confidence level: {es_SynLong_total}")
 
 
-results = []
+# CallSpread
 
-for idx, row in portfolio_df.iterrows():
-    portfolio_name = row['Portfolio']
-    holding = row['Holding']
-    option_price = row['CurrentPrice']
-    
-    portfolio_value = option_price * holding
-    delta = row.get('Delta', 1)  
-    
+S = 165  
+K1 = 160
+current_date = datetime(2023, 3, 3)
+div_date = datetime(2023, 3, 15)
+expiration_date = datetime(2023, 4, 21)
+T = (expiration_date - current_date).days / 365
+r = 0.0425  
+dividend = 1
+t_div = (div_date - current_date).days / 365
+market_price_call = 6.8  
+market_price_call2 = 2.21
 
-    var, es = calculate_var_es(portfolio_value, delta, std_dev, risk_free_rate, dividend_payment)
+iv_call2 = 0.0010 # use binomial tree model
+delta_call2 = calculate_option_delta(S, K1, T, r, iv_call2, option_type="call")
+vares_call1= vares_call
+vares_call2= calculate_var_es_delta_normal(market_price_call2, delta_call2, 0, iv_call2, dividend, r, confidence_level=0.95, holding = -1)
+var_CallSpread_total = vares_call1[0] + vares_call2[0]
+es_CallSpread_total = vares_call1[1] + vares_call2[1]
 
-    results.append({
-        'Portfolio': portfolio_name,
-        'Value': portfolio_value,
-        'VaR': var,
-        'ES': es
-    })
+print(f"VaR&ES of call1 at {confidence_level*100}% confidence level: {vares_call1}")
+print(f"VaR&ES of call2 at {confidence_level*100}% confidence level: {vares_call2}")
+print(f"Total VaR of callspread at {confidence_level*100}% confidence level: {var_CallSpread_total}")
+print(f"Total ES of callspread at {confidence_level*100}% confidence level: {es_CallSpread_total}")
 
-results_df = pd.DataFrame(results)
-print(results_df)
+# PutSpread 
+K2 = 140
+market_price_put1 = 4.85
+market_price_put2 = 1.84
 
+iv_put2 = implied_volatility_discrete_dividend_bisection(S, K2, T, r, dividend, t_div, market_price_put2, option_type="put");
+delta_put2 = calculate_option_delta(S, K2, T, r, iv_put2, option_type="put");
+vares_put1 = vares_put;
+vares_put2 = calculate_var_es_delta_normal(market_price_put2, delta_put2, 0, iv_put2, dividend, r, confidence_level=0.95, holding = -1);
+var_PutSpread_total = vares_put1[0] + vares_put2[0];
+es_PutSpread_total = vares_put1[1] + vares_put2[1];
+
+print(f"VaR&ES of put1 at {confidence_level*100}% confidence level: {vares_put1}")
+print(f"VaR&ES of put2 at {confidence_level*100}% confidence level: {vares_put2}")
+print(f"Total VaR of putspread at {confidence_level*100}% confidence level: {var_PutSpread_total}")
+print(f"Total ES of putspread at {confidence_level*100}% confidence level: {es_PutSpread_total}")
+
+# CallPut
+
+vares_call= vares_call
+vares_put= vares_put
+var_callput_total = vares_call[0] + vares_put[0]
+es_callput_total = vares_call[1] + vares_put[1]
+
+print(f"VaR&ES of call at {confidence_level*100}% confidence level: {vares_call}")
+print(f"VaR&ES of put at {confidence_level*100}% confidence level: {vares_put}")
+print(f"Total VaR of callput at {confidence_level*100}% confidence level: {var_callput_total}")
+print(f"Total ES of callput at {confidence_level*100}% confidence level: {es_callput_total}")
 
 
 
