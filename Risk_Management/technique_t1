@@ -1,0 +1,55 @@
+import numpy as np
+import pandas as pd
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+
+
+# Generate some random numbers with missing values
+def generate_with_missing(n, m, pmiss=0.25):
+    x = np.full((n, m), np.nan)  # Initialize with NaN to represent missing values
+
+    for i in range(n):
+        for j in range(m):
+            if np.random.rand() >= pmiss:
+                x[i, j] = np.random.randn()
+    return x
+
+# Set seed for reproducibility
+np.random.seed(2)
+x = generate_with_missing(10, 5, pmiss=0.2)
+
+# Save generated data to CSV
+pd.DataFrame(x).to_csv("/content/drive/MyDrive/Colab Notebooks/test/test1.csv", index=False)
+x_df = pd.read_csv("/content/drive/MyDrive/Colab Notebooks/test/test1.csv")
+
+# Convert to NumPy array for calculations
+x_matrix = x_df.to_numpy()
+
+
+
+# Function to calculate covariance or correlation, skipping missing values
+def missing_cov(data, skip_miss=True, fun=np.cov):
+    if skip_miss:
+        # Remove rows with missing values
+        clean_data = data[~np.isnan(data).any(axis=1)]
+        return fun(clean_data, rowvar=False)
+    else:
+        # Pairwise approach: Compute covariance/correlation pairwise
+        n = data.shape[1]
+        result = np.empty((n, n))
+        for i in range(n):
+            for j in range(n):
+                mask = ~np.isnan(data[:, i]) & ~np.isnan(data[:, j])
+                if mask.any():
+                    result[i, j] = fun(data[mask][:, [i, j]], rowvar=False)[0, 1]
+                else:
+                    result[i, j] = np.nan
+        return result
+
+
+
+# 1.1 Skip Missing rows - Covariance
+cout_1_1 = missing_cov(x_matrix, skip_miss=True, fun=np.cov)
+pd.DataFrame(cout_1_1).to_csv("/content/drive/MyDrive/Colab Notebooks/test/testout_1.1.csv", index=False)
