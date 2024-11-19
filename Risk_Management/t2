@@ -1,0 +1,62 @@
+import numpy as np
+import pandas as pd
+from google.colab import drive
+drive.mount('/content/drive')
+
+# Function to generate data without missing values
+def generate_without_missing(n, m):
+    return np.random.randn(n, m)
+
+# Function to compute exponentially weighted covariance matrix
+def ewCovar(data, lam):
+    n, m = data.shape
+    ew_cov = np.zeros((m, m))
+    weights = np.zeros(n)
+
+    # Generate weights for exponential decay
+    for t in range(n):
+        weights[t] = lam ** (n - t - 1)
+    weights /= np.sum(weights)
+
+    # Compute mean
+    weighted_mean = np.sum(data * weights[:, None], axis=0)
+
+    # Compute EW covariance
+    for i in range(m):
+        for j in range(m):
+            ew_cov[i, j] = np.sum(weights * (data[:, i] - weighted_mean[i]) * (data[:, j] - weighted_mean[j]))
+    
+    return ew_cov
+
+# Set random seed for reproducibility
+np.random.seed(3)
+
+# Generate data without missing values
+x = generate_without_missing(40, 5)
+
+# Save the data to a CSV file
+pd.DataFrame(x).to_csv("/content/drive/MyDrive/Colab Notebooks/test/test2.csv", index=False)
+
+# Read data from the CSV file
+x_matrix = pd.read_csv("/content/drive/MyDrive/Colab Notebooks/test/test2.csv").to_numpy()
+
+# 2.1 EW Covariance λ=0.97
+cout_2_1 = ewCovar(x_matrix, 0.97)
+pd.DataFrame(cout_2_1).to_csv("/content/drive/MyDrive/Colab Notebooks/test/testout_2.1.csv", index=False)
+
+# 2.2 EW Correlation λ=0.94
+cout_2_2 = ewCovar(x_matrix, 0.94)
+sd = 1 / np.sqrt(np.diag(cout_2_2))  # Standard deviations
+cout_2_2_corr = np.diag(sd) @ cout_2_2 @ np.diag(sd)  # Convert covariance to correlation matrix
+pd.DataFrame(cout_2_2_corr).to_csv("/content/drive/MyDrive/Colab Notebooks/test/testout_2.2.csv", index=False)
+
+# 2.3 EW Cov with EW Var (λ=0.94) and EW Correlation (λ=0.97)
+cout_var = ewCovar(x_matrix, 0.97)
+sd1 = np.sqrt(np.diag(cout_var))
+
+cout_corr = ewCovar(x_matrix, 0.94)
+sd2 = 1 / np.sqrt(np.diag(cout_corr))
+
+# Adjust covariance with the two sets of standard deviations
+cout_2_3 = np.diag(sd1) @ np.diag(sd2) @ cout_corr @ np.diag(sd2) @ np.diag(sd1)
+pd.DataFrame(cout_2_3).to_csv("/content/drive/MyDrive/Colab Notebooks/test/testout_2.3.csv", index=False)
