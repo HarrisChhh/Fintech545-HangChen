@@ -1,1 +1,81 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+from google.colab import drive
+drive.mount('/content/drive')
 
+# Load data
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/data.csv')
+returns = data.values
+
+# Risk-free rate
+risk_free_rate = 0.0475
+
+# Function to calculate portfolio return and volatility
+def portfolio_stats(weights, returns):
+    portfolio_return = np.dot(weights, np.mean(returns, axis=0))
+    portfolio_volatility = np.sqrt(weights.T @ np.cov(returns.T) @ weights)
+    return portfolio_return, portfolio_volatility
+
+# Function to calculate the Sharpe Ratio (for optimization)
+def negative_sharpe_ratio(weights, returns, risk_free_rate):
+    portfolio_return, portfolio_volatility = portfolio_stats(weights, returns)
+    sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
+    return -sharpe_ratio
+
+# Constraints: weights sum to 1, up to 100% short position
+constraints = ({
+    'type': 'eq',
+    'fun': lambda weights: np.sum(weights) - 1
+})
+bounds = [(-1, 1) for _ in range(returns.shape[1])]
+
+# Optimize for maximum Sharpe Ratio
+initial_weights = np.ones(returns.shape[1]) / returns.shape[1]
+result_sharpe = minimize(negative_sharpe_ratio, initial_weights, args=(returns, risk_free_rate), 
+                         method='SLSQP', bounds=bounds, constraints=constraints)
+max_sharpe_weights = result_sharpe.x
+print("The weights of maxim Sharpe Ratio portfolios are:", max_sharpe_weights)
+
+# Function to calculate risk adjusted return
+def risk_adjusted_return(weights, returns, risk_free_rate, alpha=0.025):
+    portfolio_return, _ = portfolio_stats(weights, returns)
+    excess_returns = np.dot(returns, weights) - risk_free_rate
+    expected_shortfall = -np.mean(np.sort(excess_returns)[:int(alpha * len(excess_returns))])
+    return -(portfolio_return - risk_free_rate) / expected_shortfall
+
+# Optimize for maximum risk-adjusted return
+result_rar = minimize(risk_adjusted_return, initial_weights, args=(returns, risk_free_rate, 0.025), 
+                       method='SLSQP', bounds=bounds, constraints=constraints)
+max_rar_weights = result_rar.x
+print("New risk adjusted return metric is:", max_rar_weights)
+
+# Comparasion of two results
+def compare_portfolios(weights1, weights2, returns):
+    stats1 = portfolio_stats(weights1, returns)
+    stats2 = portfolio_stats(weights2, returns)
+    return pd.DataFrame({
+        'Portfolio': ['Max Sharpe', 'Max RAR'],
+        'Return': [stats1[0], stats2[0]],
+        'Volatility': [stats1[1], stats2[1]],
+    })
+
+comparison = compare_portfolios(max_sharpe_weights, max_rar_weights, returns)
+print(comparison)
+
+# Visualize the weight distributions
+labels = [f'Asset {i+1}' for i in range(returns.shape[1])]
+
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.bar(labels, max_sharpe_weights)
+plt.title("Max Sharpe Ratio Portfolio")
+plt.subplot(1, 2, 2)
+plt.bar(labels, max_rar_weights)
+plt.title("Max Risk-Adjusted Return Portfolio")
+plt.tight_layout()
+plt.show()
+
+# Return
+comparison.to_csv('portfolio_comparison.csv', index=False)
