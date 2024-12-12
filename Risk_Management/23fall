@@ -1,0 +1,82 @@
+import numpy as np
+import pandas as pd
+import scipy.stats as stats
+from scipy.optimize import minimize
+from statsmodels.tsa.stattools import adfuller
+from sklearn.covariance import OAS
+from scipy.stats import t
+import matplotlib.pyplot as plt
+
+# Problem 1: Log Returns and Distribution Fitting
+def calculate_log_returns(prices):
+    return np.log(prices / prices.shift(1)).dropna()
+
+def fit_distributions(returns):
+    norm_params = stats.norm.fit(returns)
+    t_params = stats.t.fit(returns)
+    return norm_params, t_params
+
+def compare_distributions(returns, norm_params, t_params):
+    norm_ks = stats.kstest(returns, 'norm', args=norm_params).statistic
+    t_ks = stats.kstest(returns, 't', args=t_params).statistic
+    return 'Student-t' if t_ks < norm_ks else 'Normal'
+
+# Problem 2: Option Greeks and Implied Volatility
+def black_scholes_call(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    return S * stats.norm.cdf(d1) - K * np.exp(-r * T) * stats.norm.cdf(d2)
+
+def implied_volatility(S, K, T, r, market_price):
+    def iv_func(sigma):
+        return black_scholes_call(S, K, T, r, sigma) - market_price
+    return minimize(lambda x: abs(iv_func(x)), 0.2, bounds=[(0.01, 3)]).x[0]
+
+# Problem 3: VaR and Expected Shortfall
+def calculate_var_es(returns, alpha=0.05):
+    var = np.percentile(returns, alpha * 100)
+    es = returns[returns <= var].mean()
+    return var, es
+
+# Problem 4: Portfolio Risk and Sharpe Ratio
+def calculate_exponential_covariance(returns, lambda_=0.94):
+    weights = np.exp(-lambda_ * np.arange(len(returns))[::-1])
+    weights /= weights.sum()
+    return np.cov(returns.T, aweights=weights)
+
+def risk_contribution(weights, cov_matrix):
+    portfolio_var = weights.T @ cov_matrix @ weights
+    return weights * (cov_matrix @ weights) / portfolio_var
+
+def sharpe_ratio(weights, returns, cov_matrix, risk_free):
+    mean_return = np.sum(weights * returns.mean())
+    portfolio_std = np.sqrt(weights.T @ cov_matrix @ weights)
+    return (mean_return - risk_free) / portfolio_std
+
+# Problem 5: Generalized T Distribution and Gaussian Copula
+def fit_t_distribution(returns):
+    return t.fit(returns)
+
+def calculate_es_with_copula(returns, alpha=0.05):
+    cov_matrix = np.cov(returns.T)
+    mean_returns = np.mean(returns, axis=0)
+    portfolio_weights = np.ones(len(mean_returns)) / len(mean_returns)
+    portfolio_mean = portfolio_weights @ mean_returns
+    portfolio_var = portfolio_weights.T @ cov_matrix @ portfolio_weights
+    portfolio_std = np.sqrt(portfolio_var)
+    return stats.norm.ppf(alpha, portfolio_mean, portfolio_std)
+
+# Problem 6: Stock and Option Portfolio Simulation
+def simulate_stock_option(S0, K, T, r, sigma, n_simulations=100000):
+    stock_returns = np.random.normal(r * T, sigma * np.sqrt(T), n_simulations)
+    stock_prices = S0 * np.exp(stock_returns)
+    option_payoffs = np.maximum(stock_prices - K, 0)
+    return stock_prices, option_payoffs
+
+def optimize_sharpe_ratio(stock_returns, option_payoffs, risk_free):
+    portfolio_returns = stock_returns + option_payoffs
+    portfolio_std = np.std(portfolio_returns)
+    sharpe_ratio = (np.mean(portfolio_returns) - risk_free) / portfolio_std
+    return sharpe_ratio
+
+print("Functions for all problems are implemented. Use with corresponding data for exam tasks.")
