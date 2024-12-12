@@ -1,0 +1,56 @@
+Q1: The first 4 moment values of data in problem1.csv
+
+A1: 
+import pandas as pd
+from google.colab import drive
+drive.mount('/content/drive')
+
+data = pd.read_csv('/content/drive/MyDrive/problem1.csv')
+moments = {
+    'Mean (1st Moment)': data['x'].mean(),
+    'Variance (2nd Moment)': data['x'].var(),
+    'Skewness (3rd Moment)': data['x'].skew(),
+    'Kurtosis (4th Moment)': data['x'].kurt()
+}
+print(moments)
+
+
+Q2-1: Assume the multiple linear regression model 𝑌 = 𝑋𝜷 + ε, fit data using OLS and MLE(normality),
+    compare the beta values and the standard deviation 
+
+A2-1: 
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy.optimize import minimize
+
+from google.colab import drive
+drive.mount('/content/drive')
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/fintech/problem2-2.csv')
+
+X = sm.add_constant(data['x']) 
+y = data['y']
+
+# OLS fit
+ols = sm.OLS(y, X).fit()
+
+# MLE function
+def mle_normal(params):
+    beta0, beta1, sigma = params
+    residuals = y - (beta0 + beta1 * data['x'])
+    return len(y) * np.log(sigma) + np.sum(residuals**2) / (2 * sigma**2)
+
+# MLE fit
+initial = [ols.params[0], ols.params[1], np.std(ols.resid)]
+mle_result = minimize(mle_normal, initial, bounds=[(None, None), (None, None), (1e-6, None)])
+mle_params = mle_result.x
+
+print("OLS Beta:", ols.params.values)
+print("MLE Beta:", mle_params[:2])
+print("OLS Std Dev:", np.std(ols.resid))
+print("MLE Sigma:", mle_params[2])
+
+
+Q2-2: using MLE given the assumption of a T distribution of errors to fit the data
+
+A2-2: 
