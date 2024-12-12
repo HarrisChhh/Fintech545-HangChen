@@ -147,6 +147,86 @@ plt.show()
 
 
 
-Q3:
-A3:
 
+Q3:calculate the VaR of each portfolio as well as your total VaR (VaR of the total holdings). 
+Express VaR as a $; Choose a different model for returns and calculate VaR again.
+A3:
+import os
+import pandas as pd
+import numpy as np
+from scipy.stats import norm
+
+# Mount Google Drive to access files
+from google.colab import drive
+drive.mount('/content/drive', force_remount=True)
+
+# File paths
+daily_prices_file = '/content/drive/My Drive/Colab Notebooks/DailyPrices.csv'
+portfolio_file = '/content/drive/My Drive/Colab Notebooks/portfolio.csv'
+
+# Check if files exist
+if not (os.path.isfile(daily_prices_file) and os.path.isfile(portfolio_file)):
+    print("One or both files do not exist. Please check the file paths.")
+    exit()
+
+# Read files
+daily_prices = pd.read_csv(daily_prices_file, parse_dates=['Date'], index_col='Date')
+portfolio = pd.read_csv(portfolio_file)
+
+# Calculate returns
+log_returns = np.log(daily_prices / daily_prices.shift(1)).dropna()
+arithmetic_returns = daily_prices.pct_change().dropna()
+
+# Filter portfolio for available stocks
+portfolio_filtered = portfolio[portfolio['Stock'].isin(log_returns.columns)]
+
+# Create portfolio weights
+portfolio_weights = {
+    name: holdings.set_index('Stock')['Holding'] / holdings['Holding'].sum()
+    for name, holdings in portfolio_filtered.groupby('Portfolio')
+}
+
+# Custom exponentially weighted covariance matrix
+def calculate_ew_cov_matrix(returns, lambda_value):
+    weights = np.array([(1 - lambda_value) * (lambda_value ** i) for i in range(len(returns))][::-1])
+    weights /= weights.sum()
+    demeaned = returns - returns.mean()
+    weighted_cov = demeaned.mul(weights, axis=0).T @ demeaned
+    return weighted_cov / weights.sum()
+
+# Portfolio VaR calculation
+def calculate_portfolio_var(returns, weights, lambda_value=0.97, alpha=0.05):
+    ew_cov_matrix = calculate_ew_cov_matrix(returns, lambda_value)
+    portfolio_std = np.sqrt(weights @ ew_cov_matrix @ weights)
+    return portfolio_std * abs(norm.ppf(1 - alpha))
+
+# Portfolio total value
+def calculate_portfolio_value(portfolio, daily_prices, name):
+    holdings = portfolio[portfolio['Portfolio'] == name]
+    latest_prices = daily_prices.iloc[-1]
+    merged = holdings.merge(latest_prices.rename('Price'), left_on='Stock', right_index=True)
+    return (merged['Holding'] * merged['Price']).sum()
+
+# Calculate and display results
+total_value = 0
+total_var_log = 0
+total_var_arithmetic = 0
+
+for name, weights in portfolio_weights.items():
+    value = calculate_portfolio_value(portfolio_filtered, daily_prices, name)
+    total_value += value
+    var_log = calculate_portfolio_var(log_returns[weights.index], weights)
+    var_arithmetic = calculate_portfolio_var(arithmetic_returns[weights.index], weights)
+    total_var_log += value * var_log
+    total_var_arithmetic += value * var_arithmetic
+    print(f"\nPortfolio: {name}")
+    print(f"Value: ${value:.2f}, VaR (Log Returns): ${value * var_log:.2f}, VaR (Arithmetic): ${value * var_arithmetic:.2f}")
+
+# Combined portfolio
+combined_weights = portfolio_filtered.groupby('Stock')['Holding'].sum() / portfolio_filtered['Holding'].sum()
+combined_var_log = calculate_portfolio_var(log_returns[combined_weights.index], combined_weights)
+combined_var_arithmetic = calculate_portfolio_var(arithmetic_returns[combined_weights.index], combined_weights)
+
+print(f"\nTotal Portfolio Value: ${total_value:.2f}")
+print(f"Combined VaR (Log Returns): ${total_value * combined_var_log:.2f}")
+print(f"Combined VaR (Arithmetic Returns): ${total_value * combined_var_arithmetic:.2f}")
