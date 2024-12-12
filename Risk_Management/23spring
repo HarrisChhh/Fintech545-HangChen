@@ -1,0 +1,74 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.stats import norm, t
+from numpy.linalg import inv
+
+# Question 2: Moments and Risk/Reward
+def calculate_moments(data):
+    return {
+        "Mean": np.mean(data),
+        "Variance": np.var(data),
+        "Skewness": stats.skew(data),
+        "Kurtosis": stats.kurtosis(data)
+    }
+
+# Question 3: Pairwise Correlation and PSD Matrix
+def calculate_correlation_matrix(data):
+    return data.corr()
+
+def nearest_psd_matrix(corr_matrix):
+    eigvals, eigvecs = np.linalg.eigh(corr_matrix)
+    eigvals = np.maximum(eigvals, 0)
+    return eigvecs @ np.diag(eigvals) @ eigvecs.T
+
+# Question 4 and 5: Joint Simulation
+def simulate_normal_model(alpha, beta, X, epsilon_std):
+    epsilon = np.random.normal(0, epsilon_std, size=len(X))
+    Y = alpha + beta * X + epsilon
+    return Y
+
+def simulate_t_model(alpha, beta, X, epsilon_std, nu):
+    epsilon = t.rvs(nu, scale=epsilon_std, size=len(X))
+    Y = alpha + beta * X + epsilon
+    return Y
+
+# Question 6: Implied Volatility and VaR/ES
+def implied_volatility(S, K, T, r, market_price):
+    def bs_price(sigma):
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+    return minimize(lambda x: abs(bs_price(x) - market_price), 0.2, bounds=[(0.01, 3)]).x[0]
+
+def calculate_var_es(returns, alpha=0.05):
+    var = np.percentile(returns, alpha * 100)
+    es = returns[returns <= var].mean()
+    return var, es
+
+# Question 8: Maximum Sharpe Ratio Portfolio
+def max_sharpe_ratio(corr_matrix, volatilities, expected_returns, risk_free=0):
+    cov_matrix = np.diag(volatilities) @ corr_matrix @ np.diag(volatilities)
+    inv_cov = inv(cov_matrix)
+    excess_returns = expected_returns - risk_free
+    weights = inv_cov @ excess_returns
+    return weights / weights.sum()
+
+# Question 9: Risk Contribution and Risk Parity
+def risk_contribution(weights, cov_matrix):
+    portfolio_var = weights.T @ cov_matrix @ weights
+    marginal_contrib = cov_matrix @ weights
+    return weights * marginal_contrib / portfolio_var
+
+def risk_parity_weights(corr_matrix, volatilities):
+    cov_matrix = np.diag(volatilities) @ corr_matrix @ np.diag(volatilities)
+    inv_risk = 1 / np.sqrt(np.diag(cov_matrix))
+    return inv_risk / inv_risk.sum()
+
+# Question 10: Ex-Post Return Contribution
+def ex_post_contribution(returns, weights):
+    portfolio_return = (weights * returns.mean()).sum()
+    contributions = weights * returns.mean() / portfolio_return
+    return contributions
+
+print("Simplified functions are ready for use with respective data.")
