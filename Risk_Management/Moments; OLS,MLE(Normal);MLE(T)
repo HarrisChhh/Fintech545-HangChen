@@ -15,8 +15,9 @@ moments = {
 print(moments)
 
 
+
 Q2-1: Assume the multiple linear regression model 𝑌 = 𝑋𝜷 + ε, fit data using OLS and MLE(normality),
-    compare the beta values and the standard deviation 
+compare the beta values and the standard deviation 
 
 A2-1: 
 import numpy as np
@@ -51,6 +52,47 @@ print("OLS Std Dev:", np.std(ols.resid))
 print("MLE Sigma:", mle_params[2])
 
 
+
+
 Q2-2: using MLE given the assumption of a T distribution of errors to fit the data
 
 A2-2: 
+
+
+
+
+Q2-3: Fit a multivariate distribution to the data(x1,x2),Given the values of 𝑋1 what
+are the conditional distributions for 𝑋2 for each observation. Plot the expected value
+along with the 95% confidence interval and the observed value.
+
+A2-3:
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from google.colab import drive
+drive.mount('/content/drive')
+
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/fintech/problem2_x.csv')
+x1, x2 = data['x1'], data['x2']
+
+# Calculate conditional mean and variance
+mean_x1, mean_x2 = x1.mean(), x2.mean()
+cov_x1x2 = data.cov().loc['x1', 'x2']
+var_x1 = x1.var()
+conditional_mean = mean_x2 + cov_x1x2 / var_x1 * (x1 - mean_x1)
+conditional_std = np.sqrt(x2.var() - (cov_x1x2**2) / var_x1)
+
+# Compute confidence intervals
+lower_bound = conditional_mean - 1.96 * conditional_std
+upper_bound = conditional_mean + 1.96 * conditional_std
+
+# Plot results
+plt.figure(figsize=(10, 6))
+plt.plot(x1, conditional_mean, label='Conditional Mean', marker='o', linestyle='-')
+plt.fill_between(x1, lower_bound, upper_bound, color='lightgray', alpha=0.5, label='95% Confidence Interval')
+plt.scatter(x1, x2, color='red', label='Observed x2', alpha=0.7)
+plt.xlabel('x1')
+plt.ylabel('x2')
+plt.title('Conditional Distribution of x2 Given x1')
+plt.legend()
+plt.show()
