@@ -1,0 +1,84 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from scipy.optimize import minimize
+from scipy.stats import norm, t
+from numpy.linalg import inv
+
+# Question 2: Option Greeks and Valuation
+def black_scholes_put(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    put_price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+    delta = -norm.cdf(-d1)
+    gamma = norm.pdf(d1) / (S * sigma * np.sqrt(T))
+    vega = S * norm.pdf(d1) * np.sqrt(T)
+    theta = -(S * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) + r * K * np.exp(-r * T) * norm.cdf(-d2)
+    return put_price, delta, gamma, vega, theta
+
+# Question 3: P&L, VaR, and ES
+def calculate_pnl(S_initial, S_final, K, T, r, sigma):
+    initial_value, *_ = black_scholes_put(S_initial, K, T, r, sigma)
+    final_value, *_ = black_scholes_put(S_final, K, T - 5/365, r, sigma)
+    pnl = final_value - initial_value
+    return pnl
+
+def calculate_var_es(pnl, alpha=0.05):
+    var = np.percentile(pnl, alpha * 100)
+    es = pnl[pnl <= var].mean()
+    return var, es
+
+# Question 4: Ex-Ante Risk Contribution
+def calculate_risk_contribution(weights, cov_matrix):
+    portfolio_variance = weights.T @ cov_matrix @ weights
+    marginal_contribution = cov_matrix @ weights
+    risk_contribution = weights * marginal_contribution / portfolio_variance
+    return risk_contribution
+
+# Question 5: AR or MA Process
+def identify_ar_ma_process(data, lags=40):
+    plot_acf(data, lags=lags, title="ACF")
+    plt.show()
+    plot_pacf(data, lags=lags, title="PACF")
+    plt.show()
+
+# Question 6 & 7: VaR of Portfolio Using Structural Models
+def portfolio_var_structural(SPY_returns, stock_weights, beta_estimates, residual_std):
+    portfolio_variance = np.var(SPY_returns) * (beta_estimates @ stock_weights)**2 + \
+                         np.sum((residual_std * stock_weights)**2)
+    return np.sqrt(portfolio_variance)
+
+# Question 9 & 10: Maximum Sharpe and Risk Parity
+def max_sharpe_ratio_portfolio(correlation_matrix, volatilities, expected_returns, risk_free):
+    cov_matrix = np.diag(volatilities) @ correlation_matrix @ np.diag(volatilities)
+    inv_cov_matrix = inv(cov_matrix)
+    excess_returns = expected_returns - risk_free
+    weights = inv_cov_matrix @ excess_returns
+    weights /= np.sum(weights)
+    return weights
+
+def risk_parity_portfolio(correlation_matrix, volatilities):
+    cov_matrix = np.diag(volatilities) @ correlation_matrix @ np.diag(volatilities)
+    weights = 1 / np.sqrt(np.diag(cov_matrix))
+    weights /= np.sum(weights)
+    return weights
+
+# Extra Credit
+# EC1: Factor Beta Calculation
+def calculate_factor_betas(returns, factors):
+    X = sm.add_constant(factors)
+    betas = []
+    for i in range(returns.shape[1]):
+        model = sm.OLS(returns.iloc[:, i], X).fit()
+        betas.append(model.params)
+    return pd.DataFrame(betas, columns=["Alpha", "F1", "F2"])
+
+# EC2: VaR and ES with Generalized T Distribution
+def generalized_t_var_es(mu, sigma, nu, portfolio_weights, initial_prices, alpha=0.05):
+    portfolio_mean = portfolio_weights @ mu
+    portfolio_variance = portfolio_weights.T @ (np.diag(sigma)) @ portfolio_weights
+    portfolio_std = np.sqrt(portfolio_variance)
+    var = stats.t.ppf(alpha, nu, loc=portfolio_mean, scale=portfolio_std)
+    es = (nu + var**2) / (nu - 1) * stats.t.pdf(var, nu, loc=portfolio_mean, scale=portfolio_std)
+    return var, es
