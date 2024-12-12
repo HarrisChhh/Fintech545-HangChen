@@ -6,16 +6,32 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 
 # Question 1: Log Returns, Covariance, and PSD Fix
+# a. Calculate Log Returns
 def calculate_log_returns(prices):
     return np.log(prices / prices.shift(1)).dropna()
+log_returns = calculate_log_returns(data_q1)
+print("Log Returns:\n", log_returns)
 
+# b. Calculate Pairwise Covariance
 def calculate_covariance_matrix(data):
     return data.cov()
+cov_matrix = calculate_covariance_matrix(log_returns)
+print("Pairwise Covariance Matrix:\n", cov_matrix)
 
+# c. Check if Covariance Matrix is PSD
 def nearest_psd(matrix):
     eigvals, eigvecs = eigh(matrix)
     eigvals = np.maximum(eigvals, 0)  # Set negative eigenvalues to zero
     return eigvecs @ np.diag(eigvals) @ eigvecs.T
+def ispsd(cov_matrix):
+    eigvals = np.linalg.eigvals(cov_matrix)
+    is_psd = np.all(eigvals >= 0)
+    if not is_psd:
+        psd_matrix = nearest_psd(cov_matrix)
+        return psd_matrix
+    return cov_matrix
+psd_matrix = ispsd(cov_matrix)
+print("PSD Matrix:\n", psd_matrix)
 
 # Question 2: Option Greeks and VaR/ES
 def black_scholes_call(S, K, T, r, sigma):
