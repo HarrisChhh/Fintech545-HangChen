@@ -1,0 +1,116 @@
+Q1: Use PCA and plot the cumulative variance 
+A1:
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+from google.colab import drive
+drive.mount('/content/drive')
+
+Option_file = '/content/drive/MyDrive/Colab Notebooks/AAPL_Options.csv'
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/DailyReturn.csv')
+
+# Exponentially Weighted Covariance Function
+def exponentially_weighted_covariance(X, lambd):
+    T, N = X.shape
+    weights = lambd ** np.arange(T - 1, -1, -1)
+    weights /= weights.sum()
+    mu = np.average(X, axis=0, weights=weights)
+    X_centered = X - mu
+    return (X_centered * np.sqrt(weights[:, None])).T @ (X_centered * np.sqrt(weights[:, None]))
+
+# Compute PCA for Multiple Lambda Values
+lambdas = [0.999, 0.99, 0.9, 0.7, 0.5, 0.3]
+cumulative_variances = {}
+
+for lambd in lambdas:
+    Sigma = exponentially_weighted_covariance(data.values, lambd)
+    pca = PCA().fit(Sigma)
+    cumulative_variances[lambd] = np.cumsum(pca.explained_variance_ratio_)
+
+# Plot Results
+plt.figure(figsize=(10, 6))
+for lambd, cum_var in cumulative_variances.items():
+    plt.plot(range(1, len(cum_var) + 1), cum_var, label=f'λ = {lambd}')
+plt.title('Cumulative Variance Explained by PCA')
+plt.xlabel('Number of Components')
+plt.ylabel('Cumulative Variance Explained')
+plt.legend()
+plt.grid()
+
+
+
+
+Q2: PSD;non-PSD;near_psd;Higham psd;Compare the results of both using the Frobenius Norm
+A2:
+import numpy as np
+import time
+
+# Functions for PSD Matrix Computation
+def near_psd(A, epsilon=0):
+    """Nearest PSD Matrix using Eigenvalue Adjustment"""
+    A_sym = (A + A.T) / 2
+    eigvals, eigvecs = np.linalg.eigh(A_sym)
+    eigvals[eigvals < epsilon] = epsilon
+    return eigvecs @ np.diag(eigvals) @ eigvecs.T
+
+def higham_nearest_psd(A, max_iter=100, tol=1e-8):
+    """Higham's Nearest PSD Method"""
+    Y, delta_S = A.copy(), np.zeros_like(A)
+    for _ in range(max_iter):
+        R = Y - delta_S
+        X = (R + R.T) / 2
+        eigvals, eigvecs = np.linalg.eigh(X)
+        eigvals[eigvals < 0] = 0
+        X_psd = eigvecs @ np.diag(eigvals) @ eigvecs.T
+        delta_S = X_psd - R
+        Y = np.diag(np.ones(len(A))) + X_psd - np.diag(X_psd.diagonal())
+        if np.linalg.norm(Y - X_psd, 'fro') < tol:
+            break
+    return Y
+
+def generate_non_psd_matrix(n):
+    """Generate a Non-PSD Correlation Matrix"""
+    A = np.random.randn(n, n)
+    A = (A + A.T) / 2
+    np.fill_diagonal(A, 1)
+    A[0, 1] = A[1, 0] = 2
+    return A
+
+def is_psd(A):
+    """Check if Matrix is PSD"""
+    return np.all(np.linalg.eigvalsh(A) >= 0)
+
+# Compare Methods for Scaling
+def compare_psd_methods(matrix_sizes):
+    results = {"near_psd": [], "higham_psd": []}
+    for n in matrix_sizes:
+        print(f"\nMatrix size: {n}x{n}")
+        A = generate_non_psd_matrix(n)
+        print("Is original matrix PSD?", is_psd(A))
+        
+        # near_psd
+        start = time.time()
+        A_near = near_psd(A)
+        results["near_psd"].append(time.time() - start)
+        print("Is near_psd PSD?", is_psd(A_near))
+        
+        # Higham's method
+        start = time.time()
+        A_higham = higham_nearest_psd(A)
+        results["higham_psd"].append(time.time() - start)
+        print("Is Higham PSD?", is_psd(A_higham))
+        
+        # Frobenius norms
+        print(f"Frobenius norm (near_psd): {np.linalg.norm(A - A_near, 'fro'):.4f}")
+        print(f"Frobenius norm (Higham): {np.linalg.norm(A - A_higham, 'fro'):.4f}")
+    return results
+
+# Run Comparison
+matrix_sizes = [100, 200, 300, 400, 500]
+timings = compare_psd_methods(matrix_sizes)
+
+# Display Timings
+print("\nTimings (seconds):")
+for method, times in timings.items():
+    print(f"{method}: {times}")
