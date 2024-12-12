@@ -78,5 +78,3 @@ def optimize_sharpe_ratio(stock_returns, option_payoffs, risk_free):
     portfolio_std = np.std(portfolio_returns)
     sharpe_ratio = (np.mean(portfolio_returns) - risk_free) / portfolio_std
     return sharpe_ratio
-
-print("Functions for all problems are implemented. Use with corresponding data for exam tasks.")
