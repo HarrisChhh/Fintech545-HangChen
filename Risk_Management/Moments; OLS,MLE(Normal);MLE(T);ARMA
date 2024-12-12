@@ -1,0 +1,186 @@
+Q1: The first 4 moment values of data in problem1.csv
+
+A1: 
+import pandas as pd
+from google.colab import drive
+drive.mount('/content/drive')
+
+data = pd.read_csv('/content/drive/MyDrive/problem1.csv')
+moments = {
+    'Mean (1st Moment)': data['x'].mean(),
+    'Variance (2nd Moment)': data['x'].var(),
+    'Skewness (3rd Moment)': data['x'].skew(),
+    'Kurtosis (4th Moment)': data['x'].kurt()
+}
+print(moments)
+
+
+
+Q2-1: Assume the multiple linear regression model 𝑌 = 𝑋𝜷 + ε, fit data using OLS and MLE(normality),
+compare the beta values and the standard deviation 
+
+A2-1: 
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy.optimize import minimize
+
+from google.colab import drive
+drive.mount('/content/drive')
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/fintech/problem2-2.csv')
+
+X = sm.add_constant(data['x']) 
+y = data['y']
+
+# OLS fit
+ols = sm.OLS(y, X).fit()
+
+# MLE function
+def mle_normal(params):
+    beta0, beta1, sigma = params
+    residuals = y - (beta0 + beta1 * data['x'])
+    return len(y) * np.log(sigma) + np.sum(residuals**2) / (2 * sigma**2)
+
+# MLE fit
+initial = [ols.params[0], ols.params[1], np.std(ols.resid)]
+mle_result = minimize(mle_normal, initial, bounds=[(None, None), (None, None), (1e-6, None)])
+mle_params = mle_result.x
+
+print("OLS Beta:", ols.params.values)
+print("MLE Beta:", mle_params[:2])
+print("OLS Std Dev:", np.std(ols.resid))
+print("MLE Sigma:", mle_params[2])
+
+
+
+
+Q2-2: using MLE given the assumption of a T distribution of errors to fit the data
+
+A2-2: 
+import pandas as pd
+import statsmodels.api as sm
+from scipy.optimize import minimize
+from scipy.stats import t, norm
+from google.colab import drive
+drive.mount('/content/drive')
+
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/fintech/problem2-2.csv')
+x = sm.add_constant(data['x'])  # Add intercept and predictors
+y = data['y']
+
+# Negative log-likelihood functions
+def neg_log_likelihood_t(params):
+    beta0, beta1, sigma, nu = params
+    y_pred = beta0 + beta1 * x
+    return -t.logpdf(y - y_pred, df=nu, scale=sigma).sum()
+
+def neg_log_likelihood_normal(params):
+    beta0, beta1, sigma = params
+    y_pred = beta0 + beta1 * x
+    return -norm.logpdf(y - y_pred, scale=sigma).sum()
+
+# Optimize parameters
+params_t = minimize(neg_log_likelihood_t, [0, 0, 1, 2],
+                    bounds=[(None, None), (None, None), (1e-6, None), (1e-6, None)]).x
+params_normal = minimize(neg_log_likelihood_normal, [0, 0, 1],
+                         bounds=[(None, None), (None, None), (1e-6, None)]).x
+
+# Determine best fit
+best_fit = "T-distribution" if neg_log_likelihood_t(params_t) < neg_log_likelihood_normal(params_normal) else "Normal distribution"
+
+# Display results
+print(f"T-distribution parameters: β0={params_t[0]:.4f}, β1={params_t[1]:.4f}, σ={params_t[2]:.4f}, ν={params_t[3]:.4f}")
+print(f"Normal distribution parameters: β0={params_normal[0]:.4f}, β1={params_normal[1]:.4f}, σ={params_normal[2]:.4f}")
+print(f"Best fit: {best_fit}")
+
+
+
+
+Q2-3: Fit a multivariate distribution to the data(x1,x2),Given the values of 𝑋1 what
+are the conditional distributions for 𝑋2 for each observation. Plot the expected value
+along with the 95% confidence interval and the observed value.
+
+A2-3:
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from google.colab import drive
+drive.mount('/content/drive')
+
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/fintech/problem2_x.csv')
+x1, x2 = data['x1'], data['x2']
+
+# Calculate conditional mean and variance
+mean_x1, mean_x2 = x1.mean(), x2.mean()
+cov_x1x2 = data.cov().loc['x1', 'x2']
+var_x1 = x1.var()
+conditional_mean = mean_x2 + cov_x1x2 / var_x1 * (x1 - mean_x1)
+conditional_std = np.sqrt(x2.var() - (cov_x1x2**2) / var_x1)
+
+# Compute confidence intervals
+lower_bound = conditional_mean - 1.96 * conditional_std
+upper_bound = conditional_mean + 1.96 * conditional_std
+
+# Plot results
+plt.figure(figsize=(10, 6))
+plt.plot(x1, conditional_mean, label='Conditional Mean', marker='o', linestyle='-')
+plt.fill_between(x1, lower_bound, upper_bound, color='lightgray', alpha=0.5, label='95% Confidence Interval')
+plt.scatter(x1, x2, color='red', label='Observed x2', alpha=0.7)
+plt.xlabel('x1')
+plt.ylabel('x2')
+plt.title('Conditional Distribution of x2 Given x1')
+plt.legend()
+plt.show()
+
+
+
+Q3:which AR(n) or MA(n) model do you expect to fit this data best?
+
+A3:
+import pandas as pd
+from statsmodels.tsa.ar_model import AutoReg
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
+from google.colab import drive
+drive.mount('/content/drive')
+
+data = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/fintech/problem3-2.csv')
+series = data['x']
+
+# Plot ACF and PACF
+plot_acf(series, lags=40, title='Autocorrelation Function (ACF)')
+plt.show()
+plot_pacf(series, lags=40, title='Partial Autocorrelation Function (PACF)', method='ywmle')
+plt.show()
+
+# Function to fit AR models
+def fit_ar_models(series, max_order):
+    results = []
+    for p in range(1, max_order + 1):
+        model = AutoReg(series, lags=p).fit()
+        mse = mean_squared_error(series[p:], model.fittedvalues)
+        results.append((f"AR({p})", model.aic, mse))
+    return results
+
+# Function to fit MA models
+def fit_ma_models(series, max_order):
+    results = []
+    for q in range(1, max_order + 1):
+        model = ARIMA(series, order=(0, 0, q)).fit()
+        mse = mean_squared_error(series, model.fittedvalues)
+        results.append((f"MA({q})", model.aic, mse))
+    return results
+
+# Fit AR(1)-AR(3) and MA(1)-MA(3) models
+ar_results = fit_ar_models(series, max_order=3)
+ma_results = fit_ma_models(series, max_order=3)
+
+# Combine and display results
+results = pd.DataFrame(ar_results + ma_results, columns=['Model', 'AIC', 'MSE']).sort_values(by='AIC')
+print(results)
+
+# Highlight best model
+best_model = results.iloc[0]
+print(f"\nBest Model: {best_model['Model']} with AIC: {best_model['AIC']} and MSE: {best_model['MSE']}")
