@@ -1,0 +1,77 @@
+import numpy as np
+import pandas as pd
+import scipy.stats as stats
+from numpy.linalg import eigh
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Question 1: Log Returns, Covariance, and PSD Fix
+def calculate_log_returns(prices):
+    return np.log(prices / prices.shift(1)).dropna()
+
+def calculate_covariance_matrix(data):
+    return data.cov()
+
+def nearest_psd(matrix):
+    eigvals, eigvecs = eigh(matrix)
+    eigvals = np.maximum(eigvals, 0)  # Set negative eigenvalues to zero
+    return eigvecs @ np.diag(eigvals) @ eigvecs.T
+
+# Question 2: Option Greeks and VaR/ES
+def black_scholes_call(S, K, T, r, sigma):
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    call_price = S * stats.norm.cdf(d1) - K * np.exp(-r * T) * stats.norm.cdf(d2)
+    delta = stats.norm.cdf(d1)
+    gamma = stats.norm.pdf(d1) / (S * sigma * np.sqrt(T))
+    vega = S * stats.norm.pdf(d1) * np.sqrt(T)
+    rho = K * T * np.exp(-r * T) * stats.norm.cdf(d2)
+    return call_price, delta, gamma, vega, rho
+
+def monte_carlo_var_es(S, K, r, sigma, T, n_simulations=100000, alpha=0.05):
+    returns = np.random.normal(0, sigma * np.sqrt(T), n_simulations)
+    prices = S * np.exp(returns)
+    call_payoff = np.maximum(prices - K, 0)
+    portfolio = prices - call_payoff
+    var = np.percentile(portfolio, alpha * 100)
+    es = portfolio[portfolio <= var].mean()
+    return var, es
+
+# Question 3: Maximum Sharpe and Risk Parity Portfolio
+def max_sharpe_ratio(cov_matrix, expected_returns, risk_free=0):
+    excess_returns = expected_returns - risk_free
+    inv_cov = np.linalg.inv(cov_matrix)
+    weights = inv_cov @ excess_returns
+    return weights / weights.sum()
+
+def risk_parity_weights(cov_matrix):
+    asset_vol = np.sqrt(np.diag(cov_matrix))
+    inv_vol = 1 / asset_vol
+    return inv_vol / inv_vol.sum()
+
+# Question 4: Dynamic Weights and Return Attribution
+def calculate_new_weights(returns, weights):
+    portfolio_value = (weights * (1 + returns)).sum(axis=1)
+    new_weights = (weights * (1 + returns).T).T / portfolio_value[:, None]
+    return new_weights
+
+def ex_post_return_attribution(weights, returns):
+    portfolio_return = (weights * returns).sum(axis=1)
+    attribution = (weights * returns).div(portfolio_return, axis=0)
+    return attribution
+
+# Question 5: Generalized T Distribution and Copula
+def fit_t_distribution(data):
+    return stats.t.fit(data)
+
+def calculate_var(data, alpha=0.05):
+    return np.percentile(data, alpha * 100)
+
+def gaussian_copula_var(data, alpha=0.05):
+    cov_matrix = np.cov(data.T)
+    mean_returns = np.mean(data, axis=0)
+    portfolio_weights = np.ones(data.shape[1]) / data.shape[1]
+    portfolio_mean = portfolio_weights @ mean_returns
+    portfolio_variance = portfolio_weights.T @ cov_matrix @ portfolio_weights
+    portfolio_std = np.sqrt(portfolio_variance)
+    return stats.norm.ppf(alpha, portfolio_mean, portfolio_std)
