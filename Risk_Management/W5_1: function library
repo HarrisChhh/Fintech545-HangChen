@@ -1,0 +1,100 @@
+import numpy as np
+from scipy.stats import norm, t
+
+class RiskManagement:
+    """
+    A comprehensive library for risk management, including covariance estimation,
+    non-PSD fixes, simulation methods, VaR, and ES calculations.
+    """
+
+    # Covariance Estimation
+    @staticmethod
+    def sample_covariance(returns):
+        """Calculate the sample covariance matrix."""
+        return np.cov(returns, rowvar=False)
+
+    @staticmethod
+    def ewma_covariance(returns, lambda_value=0.94):
+        """Calculate the exponentially weighted covariance matrix."""
+        n = len(returns)
+        weights = np.array([(1 - lambda_value) * (lambda_value ** i) for i in range(n)][::-1])
+        weights /= weights.sum()  # Normalize weights
+        demeaned_returns = returns - returns.mean(axis=0)
+        weighted_cov = demeaned_returns.T @ (weights[:, None] * demeaned_returns)
+        return weighted_cov / weights.sum()
+
+    # Simulation Methods
+    @staticmethod
+    def monte_carlo(mean, cov, num_simulations=10000):
+        """Perform Monte Carlo simulations."""
+        return np.random.multivariate_normal(mean, cov, size=num_simulations)
+
+    @staticmethod
+    def historical_bootstrap(returns, num_simulations=10000):
+        """Perform historical bootstrap simulations."""
+        indices = np.random.randint(0, len(returns), size=num_simulations)
+        return returns[indices]
+
+    # Risk Metrics: VaR and ES
+    @staticmethod
+    def calculate_var(returns, alpha=0.05, method='parametric', lambda_value=0.94):
+        """Calculate VaR using different methods."""
+        if method == 'parametric':
+            mean = np.mean(returns)
+            std = np.std(returns)
+            return -norm.ppf(alpha) * std
+        elif method == 'historical':
+            return -np.percentile(returns, alpha * 100)
+        elif method == 't-distribution':
+            params = t.fit(returns)
+            df, loc, scale = params
+            return -t.ppf(alpha, df, loc, scale)
+        elif method == 'ewma':
+            cov_matrix = RiskManagement.ewma_covariance(returns[:, None], lambda_value)
+            std = np.sqrt(cov_matrix[0, 0])
+            return -norm.ppf(alpha) * std
+        else:
+            raise ValueError("Invalid method. Choose 'parametric', 'historical', 't-distribution', or 'ewma'.")
+
+    @staticmethod
+    def calculate_es(returns, alpha=0.05, method='parametric'):
+        """Calculate Expected Shortfall (ES)."""
+        var = RiskManagement.calculate_var(returns, alpha, method)
+        if method in ['parametric', 'ewma']:
+            return -np.mean(returns[returns <= -var])
+        elif method == 'historical':
+            threshold = np.percentile(returns, alpha * 100)
+            return -np.mean(returns[returns <= threshold])
+        else:
+            raise ValueError("Invalid method. Choose 'parametric' or 'historical'.")
+
+# Example Usage
+if __name__ == "__main__":
+    # Generate synthetic returns
+    np.random.seed(42)
+    returns = np.random.randn(1000)  # Simulating 1000 daily returns
+
+    # Covariance Estimation
+    sample_cov = RiskManagement.sample_covariance(returns[:, None])
+    print("Sample Covariance Matrix:\n", sample_cov)
+
+    # Simulations
+    mean = [np.mean(returns)]
+    cov = [[np.var(returns)]]
+    simulated_returns = RiskManagement.monte_carlo(mean, cov)
+    print("\nSimulated Returns (First 5 Rows):\n", simulated_returns[:5])
+
+    # Risk Metrics
+    var_parametric = RiskManagement.calculate_var(returns, alpha=0.05, method='parametric')
+    var_historical = RiskManagement.calculate_var(returns, alpha=0.05, method='historical')
+    var_t = RiskManagement.calculate_var(returns, alpha=0.05, method='t-distribution')
+    es_parametric = RiskManagement.calculate_es(returns, alpha=0.05, method='parametric')
+
+    # Display Results
+    print("\nValue at Risk (VaR):")
+    print(f"Parametric VaR: {var_parametric:.4f}")
+    print(f"Historical VaR: {var_historical:.4f}")
+    print(f"T-Distribution VaR: {var_t:.4f}")
+
+    print("\nExpected Shortfall (ES):")
+    print(f"Parametric ES: {es_parametric:.4f}")
