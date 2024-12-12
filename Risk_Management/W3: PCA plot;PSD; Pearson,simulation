@@ -41,6 +41,7 @@ plt.grid()
 
 
 
+
 Q2: PSD;non-PSD;near_psd;Higham psd;Compare the results of both using the Frobenius Norm
 A2:
 import numpy as np
@@ -114,3 +115,110 @@ timings = compare_psd_methods(matrix_sizes)
 print("\nTimings (seconds):")
 for method, times in timings.items():
     print(f"{method}: {times}")
+
+
+
+
+
+Q3: Pearson correlation + var()), Pearson correlation + EW variance; simulation with PCA
+A3:
+
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+from numpy.linalg import norm
+import time
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+df = pd.read_csv('/content/drive/MyDrive/Colab Notebooks/DailyReturn.csv')
+
+# Functions for Exponentially Weighted Covariance and Correlation
+def exponentially_weighted_covariance(X, lambd):
+    T = X.shape[0]
+    weights = lambd ** np.arange(T - 1, -1, -1)
+    weights /= weights.sum()
+    X_centered = X - np.average(X, axis=0, weights=weights)
+    return (X_centered * weights[:, None]).T @ X_centered
+
+def exponentially_weighted_correlation(X, lambd):
+    ew_cov = exponentially_weighted_covariance(X, lambd)
+    std = np.sqrt(np.diag(ew_cov))
+    return np.clip(ew_cov / np.outer(std, std), -1, 1)
+
+def construct_covariance(corr_matrix, variances):
+    std_dev = np.sqrt(variances)
+    return corr_matrix * np.outer(std_dev, std_dev)
+
+# Functions for Simulations
+def simulate_direct(cov_matrix, n_samples):
+    mean_vector = np.zeros(cov_matrix.shape[0])
+    return np.random.multivariate_normal(mean_vector, cov_matrix, n_samples)
+
+def simulate_pca(cov_matrix, n_samples, variance_explained):
+    eigvals, eigvecs = np.linalg.eigh(cov_matrix)
+    idx = np.argsort(eigvals)[::-1]
+    eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
+    cum_variance = np.cumsum(eigvals) / eigvals.sum()
+    num_components = np.searchsorted(cum_variance, variance_explained) + 1
+    selected_eigvals = eigvals[:num_components]
+    selected_eigvecs = eigvecs[:, :num_components]
+    random_samples = np.random.randn(n_samples, num_components)
+    return random_samples @ np.diag(np.sqrt(selected_eigvals)) @ selected_eigvecs.T
+
+# Parameters
+lambd = 0.97
+n_samples = 25000
+variance_explained_levels = [1.0, 0.75, 0.50]
+
+# Compute Pearson and Exponentially Weighted Matrices
+pearson_corr = np.corrcoef(data, rowvar=False)
+standard_variance = np.var(data, axis=0)
+ew_corr = exponentially_weighted_correlation(data, lambd)
+ew_variance = np.diag(exponentially_weighted_covariance(data, lambd))
+
+cov_matrices = {
+    'pearson_var': construct_covariance(pearson_corr, standard_variance),
+    'ew_corr_ew_var': construct_covariance(ew_corr, ew_variance)
+}
+
+# Simulations and Timings
+results, timings = {}, {}
+for name, cov_matrix in cov_matrices.items():
+    print(f"\nSimulating from {name} matrix")
+    results[name], timings[name] = {}, {}
+
+    # Direct Simulation
+    start = time.time()
+    results[name]['direct'] = simulate_direct(cov_matrix, n_samples)
+    timings[name]['direct'] = time.time() - start
+
+    # PCA Simulation
+    for level in variance_explained_levels:
+        start = time.time()
+        results[name][f'pca_{int(level * 100)}'] = simulate_pca(cov_matrix, n_samples, level)
+        timings[name][f'pca_{int(level * 100)}'] = time.time() - start
+
+# Compare Simulated vs Input Covariances
+frobenius_norms = {}
+for name, cov_matrix in cov_matrices.items():
+    frobenius_norms[name] = {}
+    for method, sim_data in results[name].items():
+        sim_cov = np.cov(sim_data, rowvar=False)
+        frobenius_norms[name][method] = norm(cov_matrix - sim_cov, 'fro')
+
+# Print Results
+print("\nTimings (seconds):")
+for name, methods in timings.items():
+    print(f"{name}:")
+    for method, time_ in methods.items():
+        print(f"  {method}: {time_:.2f} seconds")
+
+print("\nFrobenius Norms:")
+for name, methods in frobenius_norms.items():
+    print(f"{name}:")
+    for method, fro_norm in methods.items():
+        print(f"  {method}: {fro_norm:.4f}")
+ 
