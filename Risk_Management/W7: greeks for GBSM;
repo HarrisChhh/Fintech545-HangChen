@@ -1,0 +1,57 @@
+Q1:greeks for GBSM
+A1:
+import numpy as np
+from scipy.stats import norm
+import math
+from datetime import datetime
+
+# Parameters
+S, K, sigma, r, q = 151.03, 165, 0.2, 0.0425, 0.0053  # Stock price, strike price, volatility, rates
+current_date, expiration_date = datetime(2022, 3, 13), datetime(2022, 4, 15)
+T = (expiration_date - current_date).days / 365  # Time to expiration in years
+steps, h = 100, 1e-4  # Binomial tree steps and finite difference increment
+
+# Black-Scholes-Merton formula
+def black_scholes_price(S, K, T, r, sigma, option_type="call", q=0):
+    d1 = (math.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    if option_type == "call":
+        return S * math.exp(-q * T) * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
+    return K * math.exp(-r * T) * norm.cdf(-d2) - S * math.exp(-q * T) * norm.cdf(-d1)
+
+# Greeks using finite difference
+def finite_difference_greeks(S, K, T, r, sigma, option_type="call", q=0, h=1e-4):
+    price = lambda s, sig, rate: black_scholes_price(s, K, T, rate, sig, option_type, q)
+    delta = (price(S + h, sigma, r) - price(S - h, sigma, r)) / (2 * h)
+    gamma = (price(S + h, sigma, r) - 2 * price(S, sigma, r) + price(S - h, sigma, r)) / (h ** 2)
+    vega = (price(S, sigma + h, r) - price(S, sigma - h, r)) / (2 * h)
+    theta = (price(S, sigma, r) - price(S, sigma, r) + h) / (2 * h)
+    rho = (price(S, sigma, r + h) - price(S, sigma, r - h)) / (2 * h)
+    return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
+
+# Binomial tree model for American options
+def binomial_tree_option(S, K, T, r, sigma, steps, option_type="call", q=0):
+    dt = T / steps
+    u, d = math.exp(sigma * math.sqrt(dt)), math.exp(-sigma * math.sqrt(dt))
+    p = (math.exp((r - q) * dt) - d) / (u - d)
+    prices = np.array([S * (u ** i) * (d ** (steps - i)) for i in range(steps + 1)])
+    option_values = np.maximum(0, (prices - K) if option_type == "call" else (K - prices))
+    for step in range(steps - 1, -1, -1):
+        option_values = math.exp(-r * dt) * (p * option_values[1:] + (1 - p) * option_values[:-1])
+    return option_values[0]
+
+# Calculate prices and Greeks
+call_price_bsm = black_scholes_price(S, K, T, r, sigma, "call", q)
+put_price_bsm = black_scholes_price(S, K, T, r, sigma, "put", q)
+call_greeks_fd = finite_difference_greeks(S, K, T, r, sigma, "call", q, h)
+put_greeks_fd = finite_difference_greeks(S, K, T, r, sigma, "put", q, h)
+call_price_binomial = binomial_tree_option(S, K, T, r, sigma, steps, "call")
+put_price_binomial = binomial_tree_option(S, K, T, r, sigma, steps, "put")
+
+# Display results
+print("Black-Scholes Model Prices:")
+print(f"Call Price: {call_price_bsm:.4f}, Put Price: {put_price_bsm:.4f}")
+print("\nFinite Difference Greeks (Call Option):", call_greeks_fd)
+print("Finite Difference Greeks (Put Option):", put_greeks_fd)
+print("\nBinomial Tree Prices:")
+print(f"Call Price: {call_price_binomial:.4f}, Put Price: {put_price_binomial:.4f}")
