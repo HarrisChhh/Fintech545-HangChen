@@ -1,0 +1,47 @@
+Q1:For a range of implied volatilities between 10% and 80%, 
+plot the value of the call and the put.
+
+A1:
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+from datetime import datetime
+
+# Constants
+S, K = 165, 165  # Current stock price and strike price
+T = (datetime(2023, 3, 17) - datetime(2023, 3, 3)).days / 365.0  # Time to maturity in years
+r, q = 0.0525, 0.0053  # Risk-free rate and dividend yield
+vol_range = np.linspace(0.1, 0.8, 100)  # Implied volatility range
+
+# Black-Scholes formula
+def gbsm(S, K, T, r, q, sigma, option_type='call'):
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    if option_type == 'call':
+        return S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    return K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+
+# Calculate option prices
+call_prices = [gbsm(S, K, T, r, q, sigma, 'call') for sigma in vol_range]
+put_prices = [gbsm(S, K, T, r, q, sigma, 'put') for sigma in vol_range]
+
+# Plot
+plt.figure(figsize=(10, 6))
+plt.plot(vol_range, call_prices, label='Call Option')
+plt.plot(vol_range, put_prices, label='Put Option')
+plt.title('Option Prices vs Implied Volatility')
+plt.xlabel('Implied Volatility')
+plt.ylabel('Option Price')
+plt.legend()
+plt.grid()
+plt.show()
+
+
+
+
+
+
+
+Q2:
+A2:
+
