@@ -42,6 +42,68 @@ plt.show()
 
 
 
-Q2:
+Q2:Calculate the implied volatility for each option; plot
 A2:
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+from scipy.optimize import root_scalar
+from datetime import datetime
+from google.colab import drive
+
+# Mount Google Drive and load data
+drive.mount('/content/drive')
+file_path = '/content/drive/MyDrive/Colab Notebooks/AAPL_Options.csv'
+df = pd.read_csv(file_path)
+
+# Constants
+S, r, q = 170.15, 0.0525, 0.0057  # Stock price, risk-free rate, dividend rate
+T = (datetime(2023, 12, 15) - datetime(2023, 10, 30)).days / 365.0  # Time to maturity
+
+# Black-Scholes formula
+def gbsm(S, K, T, r, q, sigma, option_type):
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    call = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+    put = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+    return call if option_type == 'call' else put
+
+# Implied volatility
+def implied_vol(market_price, S, K, T, r, q, option_type):
+    objective = lambda sigma: gbsm(S, K, T, r, q, sigma, option_type) - market_price
+    try:
+        result = root_scalar(objective, bracket=[0.01, 2.0], method='bisect')
+        return result.root if result.converged else np.nan
+    except ValueError:
+        return np.nan
+
+# Calculate implied volatilities
+df['Implied_Volatility'] = df.apply(
+    lambda row: implied_vol(row['Last Price'], S, row['Strike'], T, r, q, row['Type'].lower()), axis=1
+)
+
+# Plot results
+plt.figure(figsize=(10, 6))
+for option_type, marker in [('call', 'o'), ('put', 'x')]:
+    subset = df[df['Type'].str.lower() == option_type]
+    plt.plot(subset['Strike'], subset['Implied_Volatility'], label=f'{option_type.title()} Options', marker=marker)
+plt.title('Implied Volatility vs Strike Price')
+plt.xlabel('Strike Price')
+plt.ylabel('Implied Volatility')
+plt.legend()
+plt.grid()
+plt.show()
+
+
+
+
+
+
+
+Q3:For each of the portfolios, graph the portfolio value over a range of underlying values;
+(Put-Call Parity Formula: C - P = S \cdot e^{-qT} - K \cdot e^{-rT})
+
+A3:
+
 
