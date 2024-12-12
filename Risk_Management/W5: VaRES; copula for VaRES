@@ -71,8 +71,66 @@ print(f"Historical: {ES_hist:.4f}")
 
 
 
-Q3:
+Q3:use a copula to Calculate the VaR and ES of each portfolio as well as your total VaR and ES.
 A3:
+import pandas as pd
+import numpy as np
+from google.colab import drive
+from scipy.stats import t, norm
+!pip install copulas
+from copulas.multivariate import GaussianMultivariate
+
+# Mount Google Drive
+drive.mount('/content/drive')
+
+# Load the data
+portfolio_file = '/content/drive/MyDrive/Colab Notebooks/portfolio-2.csv'
+prices_file = '/content/drive/MyDrive/Colab Notebooks/DailyPrices.csv'
+
+portfolio = pd.read_csv(portfolio_file)
+prices = pd.read_csv(prices_file)
+
+# Set the 'Date' column as index for prices data
+prices.set_index('Date', inplace=True)
+
+# Combine all portfolios into a single aggregated portfolio
+aggregated_portfolio = portfolio.groupby('Stock', as_index=False).sum()
+
+# Calculate daily returns for all stocks
+returns = prices.pct_change().dropna()
+
+# Calculate weighted returns for the combined portfolio
+portfolio_weights = aggregated_portfolio.set_index('Stock')['Holding'] / aggregated_portfolio['Holding'].sum()
+portfolio_returns = (returns * portfolio_weights).sum(axis=1)
+
+# Fit T-distribution to portfolio returns
+params = t.fit(portfolio_returns)
+df_t, loc_t, scale_t = params
+
+# VaR and ES using T-distribution
+VaR_t = -t.ppf(0.05, df_t, loc=loc_t, scale=scale_t)
+ES_t_integral = lambda x: x * t.pdf(x, df_t, loc=loc_t, scale=scale_t)
+ES_t = -(1 / 0.05) * t.expect(ES_t_integral, args=(df_t,), loc=loc_t, scale=scale_t, lb=-np.inf, ub=VaR_t)
+
+# VaR and ES using Historical Simulation
+VaR_hist = -np.percentile(portfolio_returns, 5)
+ES_hist = -portfolio_returns[portfolio_returns <= VaR_hist].mean()
+
+# Combine risks using Gaussian Copula
+copula = GaussianMultivariate()
+copula.fit(portfolio_returns.to_frame(name='Portfolio'))
+
+sampled_data = copula.sample(10000)
+VaR_total = np.percentile(sampled_data, 5)
+ES_total = sampled_data[sampled_data <= VaR_total].mean()
+
+# Print results
+print(f"VaR using T-distribution: {VaR_t:.4f}")
+print(f"ES using T-distribution: {ES_t:.4f}")
+print(f"VaR using Historical Simulation: {VaR_hist:.4f}")
+print(f"ES using Historical Simulation: {ES_hist:.4f}")
+print(f"Total VaR from Copula (Combined): {VaR_total:.4f}")
+print(f"Total ES from Copula (Combined): {ES_total}")
 
 
 
