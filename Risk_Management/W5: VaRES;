@@ -1,0 +1,78 @@
+Q2:Compare difference between VaR and ES under different probabilistic distributions.
+a. Using a normal distribution with an exponentially weighted variance (lambda=0.97);
+b. Using a MLE fitted T distribution
+c. Using a Historic Simulation
+A2:
+import pandas as pd
+import numpy as np
+from scipy.stats import t
+from google.colab import drive
+
+# Mount Google Drive
+drive.mount('/content/drive')
+
+# Load the CSV file
+file_path = '/content/drive/MyDrive/Colab Notebooks/problem1.csv'
+df = pd.read_csv(file_path)
+
+# Extract returns
+returns = df['x']
+lambda_value = 0.97
+
+# Exponentially Weighted Volatility
+weighted_volatility = returns.ewm(span=(2 / (1 - lambda_value) - 1)).std()
+
+# VaR and ES using Normal Distribution
+VaR_normal = -1.65 * weighted_volatility.iloc[-1]
+ES_normal = -returns[returns <= VaR_normal].mean()
+
+# Fit T-distribution
+params = t.fit(returns)
+df_t, loc, scale = params
+
+# Calculate moments for comparison
+empirical_mean = returns.mean()
+empirical_var = returns.var()
+t_mean, t_var = t.stats(df_t, loc=loc, scale=scale, moments='mv')
+
+# Verify the T-distribution fit
+print(f"Empirical Mean: {empirical_mean:.4f}, T Mean: {t_mean:.4f}")
+print(f"Empirical Variance: {empirical_var:.4f}, T Variance: {t_var:.4f}")
+
+# Adjust T-distribution fit if necessary
+if abs(empirical_mean - t_mean) > 0.01 or abs(empirical_var - t_var) > 0.01:
+    print("T-distribution fit may not be appropriate. Proceeding with caution.")
+else:
+    print("T-distribution fit verified.")
+
+# VaR and ES using T-distribution
+VaR_t = -t.ppf(0.05, df_t, loc=loc, scale=scale)
+ES_t_integral = lambda x: x * t.pdf(x, df_t, loc=loc, scale=scale)  # ES integral
+ES_t = -(1 / 0.05) * t.expect(ES_t_integral, args=(df_t,), loc=loc, scale=scale, lb=-np.inf, ub=VaR_t)
+
+# Historical VaR and ES
+VaR_hist = -np.percentile(returns, 5)  # Negated for consistency with Normal and T
+ES_hist = -returns[returns <= VaR_hist].mean()
+
+# Print results
+print("\nValue at Risk (VaR):")
+print(f"Normal Distribution: {VaR_normal:.4f}")
+print(f"T-distribution: {VaR_t:.4f}")
+print(f"Historical: {VaR_hist:.4f}")
+
+print("\nExpected Shortfall (ES):")
+print(f"Normal Distribution: {ES_normal:.4f}")
+print(f"T-distribution: {ES_t:.4f}")
+print(f"Historical: {ES_hist:.4f}")
+
+
+
+
+
+
+
+Q3:
+A3:
+
+
+
